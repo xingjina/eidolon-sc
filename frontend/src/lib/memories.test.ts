@@ -33,6 +33,7 @@ const memory = (source: string, superseded = false): Memory => ({
   source_character_name: source === "mano" ? "櫻木真乃" : null,
   created_at: "2026-09-01T12:00:00Z",
   superseded,
+  private: false,
 });
 
 describe("sourceCharacter", () => {

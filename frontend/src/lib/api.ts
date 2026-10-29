@@ -244,6 +244,8 @@ export type Memory = {
   created_at: string;
   /** 已被后来的记忆取代：角色不会再想起，删掉取代它的那条就恢复（ADR-0014）。 */
   superseded: boolean;
+  /** 只让对它说的那位角色记得；别的角色检索不到。 */
+  private: boolean;
 };
 
 /** During a call each utterance, spoken or typed, is a turn; the backend also says when each
@@ -813,6 +815,22 @@ export async function deleteMemory(id: number): Promise<void> {
 
 export async function clearMemories(): Promise<void> {
   await expectNoContent(await api("/api/memories", { method: "DELETE" }));
+}
+
+export async function updateMemory(id: number, text: string, onlyOwn?: boolean): Promise<void> {
+  const body: { text: string; private?: boolean } = { text };
+  if (onlyOwn !== undefined) body.private = onlyOwn;
+  await expectNoContent(
+    await api(`/api/memories/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function restoreMemory(id: number): Promise<void> {
+  await expectNoContent(await api(`/api/memories/${id}/restore`, { method: "POST" }));
 }
 
 /** Checks a response that carries no body. */
