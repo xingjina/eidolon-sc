@@ -300,6 +300,7 @@ eidolon-sc/
 - [VA-11 HALL-A](https://waifubartending.com/)（Sukeban Games）：酒吧的画面、调法和点唱机致敬原作，用了原版的图片、配乐和音效
 - [缝合像素](https://github.com/TakWolf/fusion-pixel-font)：酒吧的像素字体
 - [im@sparql](https://sparql.crssnky.xyz/imas/)、Lantis、ふじわらはじめ、imas-db、wikiwiki：世界设定里的偶像、唱片和演出资料
+- [LINUX DO](https://linux.do/)：从技术选型、开发到部署运维，许多经验来自这里的分享
 
 <div align="center">
 

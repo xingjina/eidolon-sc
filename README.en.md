@@ -300,6 +300,7 @@ The license covers only the code and documentation in the repository. The follow
 - [VA-11 HALL-A](https://waifubartending.com/) (Sukeban Games): the bar's look, mixing and jukebox pay tribute to it, and use its original images, music and sound effects
 - [Fusion Pixel](https://github.com/TakWolf/fusion-pixel-font): the bar's pixel font
 - [im@sparql](https://sparql.crssnky.xyz/imas/), Lantis, ふじわらはじめ, imas-db, wikiwiki: the idols, releases and lives in the world setting
+- [LINUX DO](https://linux.do/): much of what went into building and running this project was learned from the community's shared experience
 
 <div align="center">
 

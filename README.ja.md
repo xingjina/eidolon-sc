@@ -300,6 +300,7 @@ eidolon-sc/
 - [VA-11 HALL-A](https://waifubartending.com/)（Sukeban Games）：バーの画面、作り方、ジュークボックスは原作へのオマージュで、原作の画像、音楽、効果音を使っています
 - [縫合像素（Fusion Pixel）](https://github.com/TakWolf/fusion-pixel-font)：バーのピクセルフォント
 - [im@sparql](https://sparql.crssnky.xyz/imas/)、Lantis、ふじわらはじめ、imas-db、wikiwiki：世界設定のアイドル・CD・ライブのデータ
+- [LINUX DO](https://linux.do/)：技術選定から開発、デプロイと運用まで、多くの知見をここでの共有から得ました
 
 <div align="center">
 
