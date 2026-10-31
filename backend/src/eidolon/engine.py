@@ -876,7 +876,11 @@ class ConversationEngine:
         )
 
     async def reach_out(
-        self, conversation: Conversation, llm: ChatLLM, voiced_by: FishAudioModel | None = None
+        self,
+        conversation: Conversation,
+        llm: ChatLLM,
+        voiced_by: FishAudioModel | None = None,
+        at: datetime | None = None,
     ) -> list[Segment]:
         """What she says first in `conversation`, the user not talking to her (GLOSSARY.md
         「搭话」), on `llm`: its segments, as the model wrote them, delivery cues and all, as
@@ -898,7 +902,7 @@ class ConversationEngine:
         )
         messages = [entry for entry in record if isinstance(entry, Message)]
         timezone = effective_timezone(profile, None)
-        now = self._clock()
+        now = at or self._clock()
         world_prompt = (
             self._world.prompt(character.name, local_date(now, timezone)) if self._world else None
         )

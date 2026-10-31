@@ -118,6 +118,7 @@ class _Due:
     tier: Tier
     at: datetime
     zone: ZoneInfo
+    told_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,10 @@ class ReachOuts:
         if self._talking(conversation.id):
             return None
         if due < self._started:  # missed, the backend not running
+            if _same_day_morning(due, now, zone):
+                # A morning reach-out missed while the backend was off is made up when it
+                # starts, told and kept as that morning time.
+                return _Due(conversation, contact, tier, due, zone, told_at=due)
             await self._put_off(conversation.id, contact, now + self._interval(tier))
             return None
         return _Due(conversation, contact, tier, due, zone)
@@ -339,7 +344,10 @@ class ReachOuts:
             with recording.current():
                 # Written for the deployer's model to read aloud: the user's is not known here.
                 said = await self._engine.reach_out(
-                    conversation, lease.keys.chat_llm, lease.keys.read_aloud_model
+                    conversation,
+                    lease.keys.chat_llm,
+                    lease.keys.read_aloud_model,
+                    at=due.told_at,
                 )
         except Exception as e:
             # Not logged with what was raised: a service's error may repeat what it was asked.
@@ -352,7 +360,7 @@ class ReachOuts:
             lease.release()
         try:
             reach_out = await self._store.add_reach_out(
-                conversation.id, said, contact, self._in_call(conversation.id)
+                conversation.id, said, contact, self._in_call(conversation.id), at=due.told_at
             )
         except ReachOutRefused:  # they were in touch meanwhile
             await recording.finish("rejected")
@@ -429,6 +437,17 @@ def _set_due(db: sqlite3.Connection, conversation_id: str, contact_at: str, due_
         "UPDATE reach_out_schedules SET due_at = ? WHERE conversation_id = ? AND contact_at = ?",
         (due_at, conversation_id, contact_at),
     )
+
+
+def _same_day_morning(due: datetime, now: datetime, zone: ZoneInfo) -> bool:
+    """Whether `due` is a morning time of the same local day as `now`: a reach-out put off to
+    the morning and missed while the backend was down is made up then."""
+    local_due = due.astimezone(zone)
+    local_now = now.astimezone(zone)
+    if local_due.date() != local_now.date():
+        return False
+    end = (datetime.combine(local_due.date(), NIGHT[1]) + MORNING).time()
+    return NIGHT[1] <= local_due.time() < end
 
 
 def _at_night(at: datetime, zone: ZoneInfo) -> bool:

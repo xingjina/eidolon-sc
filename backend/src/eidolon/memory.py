@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS memories (
     text TEXT NOT NULL,
     created_at TEXT NOT NULL,
     superseded_by INTEGER,
+    private INTEGER NOT NULL DEFAULT 0,
     UNIQUE (user_id, text)
 );
 -- Deleting a conversation clears this from the memories written down in it.
@@ -122,6 +123,8 @@ class Memory:
     """The memory that superseded it, None while it holds (ADR-0014)."""
     conversation_id: str | None = None
     """The conversation it was told in; None if that is not known or no longer there."""
+    private: bool = False
+    """Only the character it was told to may recall it, where shared memories any may."""
 
 
 PackageKey = int | str
@@ -188,6 +191,10 @@ class _Services:
     min_relevance: Callable[[], float]
 
 
+class MemoryTextTaken(Exception):
+    """The user already has a memory saying that."""
+
+
 class Memories:
     """Every user's memories."""
 
@@ -246,6 +253,25 @@ class Memories:
         """Forget one of the user's memories; False if they have no such memory."""
         await self._settle(user_id)
         return await self._db.write(_delete, user_id, memory_id)
+
+    async def edit(
+        self,
+        user_id: str,
+        memory_id: int,
+        text: str | None = None,
+        private: bool | None = None,
+    ) -> bool:
+        """Change what one of the user's memories says and whether only the character it was
+        told to may recall it; False if they have no such memory. Raises `MemoryTextTaken` if
+        they already have another one saying that."""
+        await self._settle(user_id)
+        return await self._db.write(_edit, user_id, memory_id, text, private)
+
+    async def restore(self, user_id: str, memory_id: int) -> bool:
+        """Make a superseded memory hold again; False if it is not one of their superseded
+        memories."""
+        await self._settle(user_id)
+        return await self._db.write(_restore, user_id, memory_id)
 
     async def clear(self, user_id: str) -> None:
         """Forget all of the user's memories, including those their turns so far are still
@@ -332,11 +358,15 @@ class Memories:
         if pending := self._pending.get(user_id):
             await asyncio.wait(set(pending), timeout=SETTLE_TIMEOUT)
 
-    async def _candidates(self, user_id: str, query_vector: Sequence[float]) -> list[Memory]:
+    async def _candidates(
+        self, user_id: str, query_vector: Sequence[float], audience: str | None = None
+    ) -> list[Memory]:
         if (services := self._services) is None:
             return []
         try:
-            return await self._nearest(services.embedder, user_id, query_vector, CANDIDATES)
+            return await self._nearest(
+                services.embedder, user_id, query_vector, CANDIDATES, audience=audience
+            )
         except EmbeddingError:
             log.warning("embedding memories failed; replying without them", exc_info=True)
             return []
@@ -384,7 +414,8 @@ class Memories:
             try:
                 query_vector = await services.embedder.embed_query(last_turn)
                 candidates = await self._nearest(
-                    services.embedder, user_id, query_vector, CANDIDATES, character_id
+                    services.embedder, user_id, query_vector, CANDIDATES, character_id,
+                    audience=character_id,
                 )
             except EmbeddingError:
                 log.warning("embedding memories failed; reaching out with the latest only",
@@ -393,7 +424,7 @@ class Memories:
             found = await self._relevant(last_turn, candidates)
         since = (self._clock() - LATELY).astimezone(UTC)
         latest = [
-            m for m in _holding(await self.kept(user_id), character_id)
+            m for m in _holding(await self.kept(user_id), character_id, character_id)
             if datetime.fromisoformat(m.created_at) >= since
         ][-MAX_LATEST:]
         ids = {m.id for m in found}
@@ -410,15 +441,17 @@ class Memories:
         query_vector: Sequence[float],
         limit: int,
         character_id: str | None = None,
+        audience: str | None = None,
     ) -> list[Memory]:
         """As many as `limit` of the user's holding memories nearest a query embedded with
-        `embedder`, nearest first, only those told to the character `character_id` if given.
+        `embedder`, nearest first, only those told to the character `character_id` if given,
+        and only those a private memory lets recall it where `audience` is that character.
         Raises EmbeddingError, embedding those not embedded yet."""
         memories, stored = await self._db.read(
             self._kept_with_vectors, user_id, embedder.model
         )
         vectors = await self._vectors(embedder, user_id, memories, stored)
-        holding = _holding(memories, character_id)
+        holding = _holding(memories, character_id, audience)
         found = await asyncio.to_thread(
             nearest, [vectors[m.id] for m in holding], query_vector, limit
         )
@@ -430,6 +463,7 @@ class Memories:
         user_id: str,
         query_text: str,
         query_vector: Sequence[float] | None,
+        audience: str | None = None,
     ) -> list[Memory]:
         """The memories the background model is shown: the user's holding memories nearest
         `query_text`, embedded unless it already was (`query_vector`), or while that cannot
@@ -437,11 +471,13 @@ class Memories:
         try:
             if query_vector is None:
                 query_vector = await embedder.embed_query(query_text)
-            return await self._nearest(embedder, user_id, query_vector, SHOWN_MEMORIES)
+            return await self._nearest(
+                embedder, user_id, query_vector, SHOWN_MEMORIES, audience=audience
+            )
         except EmbeddingError:
             log.warning("embedding the turn failed; the background model is shown the latest"
                         " memories", exc_info=True)
-            return _holding(await self.kept(user_id))[-SHOWN_MEMORIES:]
+            return _holding(await self.kept(user_id), audience=audience)[-SHOWN_MEMORIES:]
 
     def _write_down(
         self,
@@ -497,7 +533,8 @@ class Memories:
         try:
             character = self._characters[conversation.character_id]
             shown = await self._shown(
-                services.embedder, user_id, memory_query(history, text), query_vector
+                services.embedder, user_id, memory_query(history, text), query_vector,
+                audience=conversation.character_id,
             )
             prompt = _extraction_prompt(character, history, text, reply, shown, now)
             answer = "".join([
@@ -536,7 +573,7 @@ class Memories:
         """What `kept` reads, read through `db`: for a data package too."""
         rows = db.execute(
             "SELECT id, user_id, source_character_id, text, created_at, superseded_by,"
-            " conversation_id FROM memories WHERE user_id = ? ORDER BY id",
+            " conversation_id, private FROM memories WHERE user_id = ? ORDER BY id",
             (user_id,),
         ).fetchall()
         return [self._memory(*row) for row in rows]
@@ -551,11 +588,12 @@ class Memories:
     def _memory(
         self, id: int, user_id: str, source_character_id: str, text: str, created_at: str,
         superseded_by: int | None = None, conversation_id: str | None = None,
+        private: bool = False,
     ) -> Memory:
         source = self._characters.get(source_character_id)
         return Memory(
             id, user_id, source_character_id, source.name if source else None, text,
-            created_at, superseded_by, conversation_id,
+            created_at, superseded_by, conversation_id, bool(private),
         )
 
     def _add(
@@ -646,6 +684,51 @@ def _open(db: sqlite3.Connection) -> None:
     columns = {row[1] for row in db.execute("PRAGMA table_info(memories)")}
     if "superseded_by" not in columns:  # kept from before superseding: all hold
         db.execute("ALTER TABLE memories ADD COLUMN superseded_by INTEGER")
+    if "private" not in columns:  # kept from before some were only one character's
+        db.execute("ALTER TABLE memories ADD COLUMN private INTEGER NOT NULL DEFAULT 0")
+
+
+def _edit(
+    db: sqlite3.Connection,
+    user_id: str,
+    memory_id: int,
+    text: str | None,
+    private: bool | None,
+) -> bool:
+    """Change the text of the user's memory, forgetting its vector so that it is embedded
+    again, and whether only its character may recall it; False if they have no such memory."""
+    row = db.execute(
+        "SELECT text FROM memories WHERE id = ? AND user_id = ?", (memory_id, user_id)
+    ).fetchone()
+    if row is None:
+        return False
+    if text is not None and text != row[0]:
+        if db.execute(
+            "SELECT 1 FROM memories WHERE user_id = ? AND text = ? AND id <> ?",
+            (user_id, text, memory_id),
+        ).fetchone():
+            raise MemoryTextTaken()
+        db.execute(
+            "UPDATE memories SET text = ? WHERE id = ? AND user_id = ?",
+            (text, memory_id, user_id),
+        )
+        db.execute("DELETE FROM memory_vectors WHERE memory_id = ?", (memory_id,))
+    if private is not None:
+        db.execute(
+            "UPDATE memories SET private = ? WHERE id = ? AND user_id = ?",
+            (int(private), memory_id, user_id),
+        )
+    return True
+
+
+def _restore(db: sqlite3.Connection, user_id: str, memory_id: int) -> bool:
+    """Make the user's superseded memory hold again."""
+    cursor = db.execute(
+        "UPDATE memories SET superseded_by = NULL"
+        " WHERE id = ? AND user_id = ? AND superseded_by IS NOT NULL",
+        (memory_id, user_id),
+    )
+    return cursor.rowcount > 0
 
 
 def _delete(db: sqlite3.Connection, user_id: str, memory_id: int) -> bool:
@@ -753,7 +836,9 @@ class MemoryTurn:
         """As many as `CANDIDATES` of the user's holding memories nearest the turn's query
         (see `memory_query`) embedded with the memories' embedder, nearest first, for
         `find`; none if memory is off or the memories not embedded yet cannot be."""
-        return await self._memories._candidates(self._conversation.user_id, query_vector)
+        return await self._memories._candidates(
+            self._conversation.user_id, query_vector, self._conversation.character_id
+        )
 
     async def find(self, query: str, candidates: Sequence[Memory]) -> str | None:
         """The prompt section carrying those of the `candidates` relevant to `query`, the
@@ -899,11 +984,18 @@ _REACHING_OUT = (
 )
 
 
-def _holding(memories: Sequence[Memory], character_id: str | None = None) -> list[Memory]:
-    """Those of `memories` that still hold, only those told to `character_id` if given."""
+def _holding(
+    memories: Sequence[Memory],
+    character_id: str | None = None,
+    audience: str | None = None,
+) -> list[Memory]:
+    """Those of `memories` that still hold: only those told to `character_id` if given, and
+    those a private memory lets recall it where `audience` is the character it was told to."""
     return [
         m for m in memories
-        if m.superseded_by is None and character_id in (None, m.source_character_id)
+        if m.superseded_by is None
+        and character_id in (None, m.source_character_id)
+        and (not m.private or (audience is not None and audience == m.source_character_id))
     ]
 
 

@@ -36,6 +36,7 @@ from eidolon.greetings import (
     greeting_path,
     voxels_path,
 )
+from eidolon.memory import MAX_MEMORY_LENGTH, MemoryTextTaken
 from eidolon.read_aloud import NoVoice, ReadAloudFailed
 from eidolon.reply_format import Segment, SegmentComplete, SegmentDelta, SpeechDelta
 from eidolon.own_keys import (
@@ -99,6 +100,11 @@ def _picture(path: Path, request: Request) -> Response:
     if etag in (tag.strip() for tag in cached_etags.split(",")):
         return Response(status_code=304, headers={"ETag": etag, **_PICTURE_CACHE})
     return response
+
+
+class MemoryEdit(BaseModel):
+    text: str | None = Field(default=None, max_length=MAX_MEMORY_LENGTH)
+    private: bool | None = None
 
 
 class NewConversation(BaseModel):
@@ -573,6 +579,7 @@ def create_app(backend: Backend) -> FastAPI:
                 "source_character_name": m.source_character_name,
                 "created_at": m.created_at,
                 "superseded": m.superseded_by is not None,
+                "private": m.private,
             }
             for m in await memory.entries(user_id)
         ]
@@ -585,6 +592,25 @@ def create_app(backend: Backend) -> FastAPI:
     @app.delete("/api/memories", status_code=204)
     async def clear_memories(user_id: UserId) -> None:
         await memory.clear(user_id)
+
+    @app.patch("/api/memories/{memory_id}", status_code=204)
+    async def edit_memory(memory_id: int, body: MemoryEdit, user_id: UserId) -> None:
+        text = body.text.strip() if body.text is not None else None
+        if text is None and body.private is None:
+            raise HTTPException(422, "没有要改的内容")
+        if text is not None and not text:
+            raise HTTPException(422, "记忆不能为空")
+        try:
+            edited = await memory.edit(user_id, memory_id, text, body.private)
+        except MemoryTextTaken:
+            raise HTTPException(409, "已经有内容相同的记忆")
+        if not edited:
+            raise HTTPException(404, "记忆不存在")
+
+    @app.post("/api/memories/{memory_id}/restore", status_code=204)
+    async def restore_memory(memory_id: int, user_id: UserId) -> None:
+        if not await memory.restore(user_id, memory_id):
+            raise HTTPException(404, "没有可恢复的记忆")
 
     @app.post("/api/conversations", status_code=201)
     async def create_conversation(body: NewConversation, user_id: UserId) -> dict:
