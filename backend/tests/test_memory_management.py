@@ -50,7 +50,7 @@ async def test_lists_every_memory_with_the_character_it_was_told_to(
         (CAT, "mano", "櫻木真乃"),
     ]
     assert all(set(m) == {"id", "text", "source_character_id", "source_character_name",
-                          "created_at", "superseded"} for m in listed)
+                          "created_at", "superseded", "private"} for m in listed)
 
 
 async def test_deleting_a_memory_that_is_gone_is_not_found(make_client: ClientFactory):

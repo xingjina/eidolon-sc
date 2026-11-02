@@ -7,6 +7,7 @@ from the site's own origin (`origin_allowed`). A session lasts `SESSION_LIFETIME
 was last used; each renewal renews the cookie too.
 """
 
+import os
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlsplit
@@ -44,6 +45,13 @@ def clear_session_cookie(response: Response, settings: Settings) -> None:
     )
 
 
+def _dev_hosts() -> set[str]:
+    """The hosts a development deployment is the site for: loopback, and whatever
+    `EIDOLON_DEV_ORIGINS` adds (comma separated), for reaching it over a LAN."""
+    extra = os.environ.get("EIDOLON_DEV_ORIGINS", "")
+    return _LOCAL_HOSTS | {host.strip() for host in extra.split(",") if host.strip()}
+
+
 def origin_allowed(origin: str | None, signed_in: bool, settings: Settings) -> bool:
     """Whether a request that changes something may come from `origin`. Browsers always
     say where such a request comes from, so one that carries the session cookie must;
@@ -54,7 +62,7 @@ def origin_allowed(origin: str | None, signed_in: bool, settings: Settings) -> b
     if settings.domain is not None:
         return origin == settings.public_origin
     parts = urlsplit(origin)
-    return parts.scheme == "http" and parts.hostname in _LOCAL_HOSTS
+    return parts.scheme in ("http", "https") and parts.hostname in _dev_hosts()
 
 
 def session_middleware(

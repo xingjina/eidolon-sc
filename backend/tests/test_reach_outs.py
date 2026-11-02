@@ -12,8 +12,9 @@ line; with an activity record of its own, which no count of turns or calls takes
 Her time goes by the producer's day, in the profile's time zone: from the night (22:00–08:00)
 to the morning after, 08:00–10:00; no more than the deployer's number a day for each user,
 the earliest first, the rest to the next morning; never past a week after the last contact.
-What was missed as the backend was down, or failed, is not made up for, but put off by a
-time from her tier's range. None for a user banned, or let take no turns on the deployer's
+A morning time missed as the backend was down is made up for later that day, told and kept
+as that morning time; what else was missed, or failed, is put off by a time from her
+tier's range. None for a user banned, or let take no turns on the deployer's
 keys; none while a text turn is under way or a call; and none recorded that the user spoke
 as she was thinking it, its record refused.
 

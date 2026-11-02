@@ -356,7 +356,7 @@ async def test_every_call_tells_her_who_she_is_this_visit_what_came_before_and_w
     shared, about, ask = (m.content for m in llm.prompts[0])
     assert MANO_SHEET in shared and "你的生日是4月25日。" in shared
     assert "illumination STARS" in shared  # the world setting
-    assert "VA-283" in shared and "具体年龄" in shared and "不往暧昧和色情的方向走" in shared
+    assert "VA-283" in shared and "具体年龄" in shared and "不写露骨的情色内容" in shared
     assert "别人的生日和节日不用特意提" in shared
     assert "order=\"true\"" in shared and "一来一回" in shared
     assert "制作人的台词只用中文写" in shared
