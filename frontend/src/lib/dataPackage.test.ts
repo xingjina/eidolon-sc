@@ -64,7 +64,7 @@ describe("读数据包开头的 manifest.json", () => {
   });
 
   it("格式比这里新时是 too_new", async () => {
-    const file = zip({ "manifest.json": [JSON.stringify({ ...MANIFEST, format: 6 }), 0], "data.json": ["{}", 6] });
+    const file = zip({ "manifest.json": [JSON.stringify({ ...MANIFEST, format: 7 }), 0], "data.json": ["{}", 6] });
 
     expect(await readManifest(file)).toEqual({ kind: "too_new" });
   });
@@ -91,7 +91,7 @@ describe("读数据包开头的 manifest.json", () => {
 });
 
 describe("导入结果的一句话", () => {
-  const nothing = { conversations: 0, photos: 0, memories: 0, profile: false, skipped: [], cycles: 0, cycles_skipped: 0, letters: 0, letters_skipped: 0 };
+  const nothing = { conversations: 0, photos: 0, memories: 0, memories_skipped: 0, memories_updated: 0, profile: false, skipped: [], cycles: 0, cycles_skipped: 0, letters: 0, letters_skipped: 0 };
 
   it("说导入了什么", () => {
     expect(importSummary({ ...nothing, profile: true })).toBe("导入了制作人档案。");
@@ -131,6 +131,18 @@ describe("导入结果的一句话", () => {
     expect(
       importSummary({ ...nothing, skipped: [{ character_name: "月岡恋鐘", conversations: 2 }], cycles_skipped: 1 }),
     ).toBe("没有新的内容要导入。跳过了和月岡恋鐘的 2 段对话，这里没有她。跳过了 1 条周期记录。");
+  });
+
+  it("带上跳过的记忆和改过可见范围的记忆", () => {
+    expect(importSummary({ ...nothing, memories_skipped: 2 })).toBe(
+      "没有新的内容要导入。跳过了 2 条记忆。",
+    );
+    expect(importSummary({ ...nothing, memories_updated: 1 })).toBe(
+      "没有新的内容要导入。更新了 1 条记忆的可见范围。",
+    );
+    expect(importSummary({ ...nothing, memories: 1, memories_skipped: 1, memories_updated: 2 })).toBe(
+      "导入了 1 条记忆。跳过了 1 条记忆。更新了 2 条记忆的可见范围。",
+    );
   });
 });
 

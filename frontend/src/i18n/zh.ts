@@ -941,7 +941,7 @@ export const zh = {
       },
       export: "导出",
       importTitle: "导入",
-      importHint: "导入的内容并进你现有的数据。",
+      importHint: "导入的内容并进你现有的数据。旧数据包里的记忆没有公共/私有，导入时新建的当公共记忆。",
       chooseFile: "选择数据包",
       import: "导入",
       importing: "正在导入…",
@@ -966,6 +966,8 @@ export const zh = {
       /** 「跳过了 2 条周期记录。」：角色不在、天数不对、在未来，或和已有的重叠。 */
       skippedCycles: (n: number) => `跳过了 ${n} 条周期记录。`,
       skippedLetters: (n: number) => `跳过了 ${n} 封信。`,
+      skippedMemories: (n: number) => `跳过了 ${n} 条记忆。`,
+      updatedMemories: (n: number) => `更新了 ${n} 条记忆的可见范围。`,
       failures: {
         broken: "这不是一个能用的数据包",
         too_new: "这个数据包来自更新的版本，请部署者升级后再导入",

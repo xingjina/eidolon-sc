@@ -6,11 +6,19 @@ clearing do to later turns is tested on the memories module (test_memories)."""
 import httpx
 
 from tests.conftest import ClientFactory
-from tests.fakes import FakeBackgroundLLM, FakeEmbedder, FakeJudge, FakeLLM, FakeReranker
+from tests.fakes import (
+    FakeBackgroundLLM,
+    FakeEmbedder,
+    FakeJudge,
+    FakeLLM,
+    FakeReranker,
+    context_of,
+)
 from tests.test_shared_memory import (
     CAT,
     REPLY,
     TRIP,
+    memories_section,
     memorized,
     turn,
 )
@@ -116,3 +124,95 @@ async def test_superseded_memories_are_listed_as_such_until_what_superseded_them
 
     assert (await client.delete(f"/api/memories/{listed[0]['id']}")).status_code == 204
     assert [(m["text"], m["superseded"]) for m in await memories(client)] == [(OSAKA, False)]
+
+
+async def test_editing_a_memory_changes_its_text_and_visibility(
+    make_client: ClientFactory,
+):
+    client = memory_client(make_client, FakeLLM(REPLY), CAT)
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+    [cat] = await memories(client)
+
+    res = await client.patch(
+        f"/api/memories/{cat['id']}", json={"text": "制作人养了一只叫小白的猫", "private": True}
+    )
+
+    assert res.status_code == 204
+    [edited] = await memories(client)
+    assert (edited["text"], edited["private"]) == ("制作人养了一只叫小白的猫", True)
+    assert (await client.patch(
+        f"/api/memories/{cat['id']}", json={"private": False}
+    )).status_code == 204
+    assert (await memories(client))[0]["private"] is False
+
+
+async def test_editing_to_a_text_already_here_is_refused(make_client: ClientFactory):
+    client = memory_client(make_client, FakeLLM(REPLY, REPLY), CAT, TRIP)
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+    await turn(client, await start_conversation(client, "kogane"), "下周六我要去北海道出差")
+    listed = await memories(client)
+    trip, cat = listed
+
+    res = await client.patch(f"/api/memories/{trip['id']}", json={"text": cat["text"]})
+
+    assert res.status_code == 409
+    assert res.json()["detail"] == "已经有内容相同的记忆"
+    assert await memories(client) == listed
+
+
+async def test_editing_a_memory_that_is_gone_is_not_found(make_client: ClientFactory):
+    client = memory_client(make_client, FakeLLM(REPLY), CAT)
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+
+    res = await client.patch("/api/memories/999", json={"private": True})
+
+    assert res.status_code == 404
+
+
+async def test_editing_with_nothing_to_change_is_refused(make_client: ClientFactory):
+    client = memory_client(make_client, FakeLLM(REPLY), CAT)
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+    [cat] = await memories(client)
+
+    res = await client.patch(f"/api/memories/{cat['id']}", json={})
+
+    assert res.status_code == 422
+
+
+async def test_a_superseded_memory_can_be_restored(make_client: ClientFactory):
+    client = make_client(
+        FakeLLM(REPLY, REPLY), retrieval_judge=FakeJudge(), embedder=FakeEmbedder(),
+        reranker=FakeReranker("制作人"),
+        background_llm=FakeBackgroundLLM(memorized(OSAKA), superseding(TOKYO, OSAKA)),
+    )
+    await turn(client, await start_conversation(client, "mano"), "我住在大阪")
+    await turn(client, await start_conversation(client, "kogane"), "我搬到东京了")
+    listed = await memories(client)
+    osaka = next(m for m in listed if m["text"] == OSAKA)
+
+    assert (await client.post(f"/api/memories/{osaka['id']}/restore")).status_code == 204
+    assert [(m["text"], m["superseded"]) for m in await memories(client)] == [
+        (TOKYO, False), (OSAKA, False),
+    ]
+    assert (await client.post(f"/api/memories/{osaka['id']}/restore")).status_code == 404
+
+
+async def test_a_private_memory_is_not_found_by_another_character(
+    make_client: ClientFactory,
+):
+    llm = FakeLLM(REPLY, REPLY, REPLY)
+    client = make_client(
+        llm, retrieval_judge=FakeJudge(), embedder=FakeEmbedder(), reranker=FakeReranker("猫"),
+        background_llm=FakeBackgroundLLM(memorized(CAT)),
+    )
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+    [cat] = await memories(client)
+    assert (await client.patch(
+        f"/api/memories/{cat['id']}", json={"private": True}
+    )).status_code == 204
+
+    await turn(client, await start_conversation(client, "kogane"), "你知道我家的猫吗？")
+    assert CAT not in memories_section(context_of(llm.prompts[-1]))
+
+    await turn(client, await start_conversation(client, "mano"), "你还记得我家的猫吗？")
+    assert CAT in memories_section(context_of(llm.prompts[-1]))

@@ -161,7 +161,7 @@ async def test_the_city_moves_with_the_profile_in_a_data_package(
 
     package = await export(here, "profile")
     _, manifest, data = unzipped(package)
-    assert manifest["format"] == 5
+    assert manifest["format"] == 6
     assert data["profile"]["city"] == city_of(DONGCHENG)
     there = other_deployment(make_client, settings, tmp_path)
     assert (await import_package(there, package, "profile")).status_code == 200

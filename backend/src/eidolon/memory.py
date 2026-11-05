@@ -146,30 +146,46 @@ class CarriedMemory:
     superseded_by: PackageKey | None
     conversation_id: str | None
     """The conversation here it was told in, None if it is not here."""
+    private: bool | None = None
+    """Whether only its character may recall it; None if the package does not say (older
+    packages), which adds a public memory and leaves one already here as it was."""
 
 
-def add_carried(db: sqlite3.Connection, user_id: str, carried: Sequence[CarriedMemory]) -> int:
+def add_carried(
+    db: sqlite3.Connection, user_id: str, carried: Sequence[CarriedMemory]
+) -> tuple[int, int]:
     """Add the memories `carried` to the user's through `db`, in the caller's transaction;
-    returns how many were new. One whose text the user already has is not added again; what
-    supersedes it, or what it says supersedes it, is the one already here. The new ones are
-    superseded as the package says, by new ones or ones already here; those already here are
-    left as they are, their superseding too. Their source characters are kept as they are,
-    here or not. They are embedded afterwards, outside the transaction (`embed_carried`)."""
+    returns how many were new and how many already here had only their visibility changed.
+    One whose text the user already has is not added again; what supersedes it, or what it
+    says supersedes it, is the one already here. The new ones are superseded as the package
+    says, by new ones or ones already here; those already here are left as they are, their
+    superseding too, and their source character is never changed: only `private`, when the
+    package says what it is. Their source characters are kept as they are, here or not.
+    They are embedded afterwards, outside the transaction (`embed_carried`)."""
     ids: dict[PackageKey, int] = {}
     new: list[CarriedMemory] = []
+    updated = 0
     for memory in carried:
         kept = db.execute(
-            "SELECT id FROM memories WHERE user_id = ? AND text = ?", (user_id, memory.text)
+            "SELECT id, private FROM memories WHERE user_id = ? AND text = ?",
+            (user_id, memory.text),
         ).fetchone()
         if kept is not None:
-            ids[memory.key] = kept[0]
+            id, private = kept
+            ids[memory.key] = id
+            if memory.private is not None and bool(private) != memory.private:
+                db.execute(
+                    "UPDATE memories SET private = ? WHERE id = ? AND user_id = ?",
+                    (int(memory.private), id, user_id),
+                )
+                updated += 1
             continue
         cursor = db.execute(
             "INSERT INTO memories"
-            " (user_id, source_character_id, conversation_id, text, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
+            " (user_id, source_character_id, conversation_id, text, created_at, private)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (user_id, memory.source_character_id, memory.conversation_id, memory.text,
-             memory.created_at),
+             memory.created_at, int(bool(memory.private))),
         )
         assert cursor.lastrowid is not None
         ids[memory.key] = cursor.lastrowid
@@ -182,7 +198,7 @@ def add_carried(db: sqlite3.Connection, user_id: str, carried: Sequence[CarriedM
             if m.superseded_by is not None and ids[m.superseded_by] != ids[m.key]
         ],
     )
-    return len(new)
+    return len(new), updated
 
 
 @dataclass(frozen=True)

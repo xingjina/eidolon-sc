@@ -43,8 +43,9 @@ PROFILE = {
 }
 EMPTY_PROFILE = {"form_of_address": None, "gender": None, "timezone": None, "birthday": None}
 NOTHING_ELSE = {
-    "conversations": 0, "photos": 0, "memories": 0, "skipped": [], "cycles": 0,
-    "cycles_skipped": 0, "letters": 0, "letters_skipped": 0,
+    "conversations": 0, "photos": 0, "memories": 0, "memories_skipped": 0,
+    "memories_updated": 0, "skipped": [], "cycles": 0, "cycles_skipped": 0,
+    "letters": 0, "letters_skipped": 0,
 }
 
 
@@ -121,7 +122,7 @@ async def test_the_producer_profile_moves_to_another_deployment(
     entries, manifest, data = unzipped(package)
     assert [e.filename for e in entries] == ["manifest.json", "data.json"]
     assert entries[0].compress_type == zipfile.ZIP_STORED
-    assert manifest["format"] == 5
+    assert manifest["format"] == 6
     assert manifest["categories"] == ["profile"]
     assert manifest["counts"] == {"profile": 1}
     assert data == {"profile": {
@@ -220,9 +221,9 @@ async def test_a_package_from_a_newer_version_is_refused_whatever_its_entries(
     make_client: ClientFactory,
 ):
     client = make_client(FakeLLM())
-    newer = json.dumps({**MANIFEST, "format": 6, "categories": ["albums"]})
+    newer = json.dumps({**MANIFEST, "format": 7, "categories": ["albums"]})
     packages = {
-        "entries as now": package_of({**MANIFEST, "format": 6, "categories": ["albums"]}, {}),
+        "entries as now": package_of({**MANIFEST, "format": 7, "categories": ["albums"]}, {}),
         "no data.json, entries of its own": _zip(
             {"manifest.json": newer, "albums.json": "{}", "albums/1.json": "{}"}
         ),
@@ -281,7 +282,7 @@ async def remembered(client: httpx.AsyncClient) -> list[tuple]:
     been superseded, newest first."""
     return [
         (m["text"], m["source_character_id"], m["source_character_name"],
-         datetime.fromisoformat(m["created_at"]), m["superseded"])
+         datetime.fromisoformat(m["created_at"]), m["superseded"], m["private"])
         for m in await memories(client)
     ]
 
@@ -308,8 +309,9 @@ async def test_memories_move_to_another_deployment_superseded_as_they_were(
     assert all(m["conversation"] is None for m in data["memories"])
     assert set(osaka) == {
         "id", "source_character_id", "source_character_name", "conversation", "text",
-        "created_at", "superseded_by",
+        "created_at", "superseded_by", "private",
     }
+    assert all(m["private"] is False for m in data["memories"])
     res = await import_package(there, package, "memories")
 
     assert res.status_code == 200, res.text
@@ -318,20 +320,25 @@ async def test_memories_move_to_another_deployment_superseded_as_they_were(
     assert [m[4] for m in kept] == [False, False, True]
 
 
-def memories_package(*memories: dict) -> bytes:
+def memories_package(*memories: dict, format: int = 1) -> bytes:
     return package_of(
-        {**MANIFEST, "categories": ["memories"], "counts": {"memories": len(memories)}},
+        MANIFEST
+        | {"format": format, "categories": ["memories"], "counts": {"memories": len(memories)}},
         {"memories": list(memories)},
     )
 
 
 def packaged_memory(id: int, text: str, superseded_by: int | None = None, *,
-                    source: tuple[str, str] = ("mano", "櫻木真乃")) -> dict:
-    return {
+                    source: tuple[str, str] = ("mano", "櫻木真乃"),
+                    private: bool | None = None) -> dict:
+    memory = {
         "id": id, "source_character_id": source[0], "source_character_name": source[1],
         "conversation": None, "text": text, "created_at": f"2026-09-0{id}T08:00:00.000000+00:00",
         "superseded_by": superseded_by,
     }
+    if private is not None:
+        memory["private"] = private
+    return memory
 
 
 async def test_a_memory_already_here_is_not_added_again_and_stands_in_for_it(
@@ -366,7 +373,7 @@ async def test_a_memory_already_here_is_not_added_again_and_stands_in_for_it(
     ]
 
 
-async def test_memories_told_to_someone_not_here_are_imported_all_the_same(
+async def test_memories_told_to_someone_not_here_are_skipped(
     make_client: ClientFactory,
 ):
     client = remembering(make_client)
@@ -376,9 +383,136 @@ async def test_memories_told_to_someone_not_here_are_imported_all_the_same(
         "memories",
     )
 
-    assert res.json()["memories"] == 1
-    assert [(m["text"], m["source_character_id"], m["source_character_name"])
-            for m in await memories(client)] == [(CAT, "hazuki", None)]
+    assert res.status_code == 200, res.text
+    assert res.json()["memories"] == 0
+    assert res.json()["memories_skipped"] == 1
+    assert await memories(client) == []
+
+
+async def test_a_private_memory_moves_to_another_deployment_private(
+    make_client: ClientFactory, settings: Settings, tmp_path: Path
+):
+    here = remembering(make_client, memorized(CAT))
+    await turn(here, await start_conversation(here, "mano"), "我家的猫叫小白哦")
+    [cat] = await memories(here)
+    assert (await here.patch(f"/api/memories/{cat['id']}", json={"private": True})).status_code == 204
+    there = other_deployment(make_client, settings, tmp_path)
+
+    package = await export(here, "memories")
+    _, manifest, data = unzipped(package)
+    assert manifest["format"] == 6
+    assert data["memories"][0]["private"] is True
+    res = await import_package(there, package, "memories")
+
+    assert res.status_code == 200, res.text
+    assert [(m["text"], m["private"]) for m in await memories(there)] == [(CAT, True)]
+
+
+async def test_a_memory_already_here_takes_the_packages_visibility(
+    make_client: ClientFactory,
+):
+    client = remembering(make_client, memorized(CAT))
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+
+    res = await import_package(
+        client,
+        memories_package(packaged_memory(1, CAT, private=True), format=6),
+        "memories",
+    )
+
+    assert res.status_code == 200, res.text
+    assert (res.json()["memories"], res.json()["memories_updated"]) == (0, 1)
+    assert [(m["text"], m["private"]) for m in await memories(client)] == [(CAT, True)]
+
+
+async def test_a_memory_already_here_keeps_its_owner_when_the_package_says_another(
+    make_client: ClientFactory,
+):
+    client = remembering(make_client, memorized(CAT))
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+
+    res = await import_package(
+        client,
+        memories_package(
+            packaged_memory(1, CAT, source=("kogane", "月岡恋鐘"), private=True), format=6
+        ),
+        "memories",
+    )
+
+    assert res.status_code == 200, res.text
+    assert (res.json()["memories"], res.json()["memories_updated"]) == (0, 1)
+    assert [(m["text"], m["source_character_id"], m["private"])
+            for m in await memories(client)] == [(CAT, "mano", True)]
+
+
+async def test_an_older_package_leaves_an_existing_memory_as_it_was(
+    make_client: ClientFactory,
+):
+    client = remembering(make_client, memorized(CAT))
+    await turn(client, await start_conversation(client, "mano"), "我家的猫叫小白哦")
+    [cat] = await memories(client)
+    assert (await client.patch(f"/api/memories/{cat['id']}", json={"private": True})).status_code == 204
+
+    res = await import_package(client, memories_package(packaged_memory(1, CAT)), "memories")
+
+    assert res.status_code == 200, res.text
+    assert (res.json()["memories"], res.json()["memories_updated"]) == (0, 0)
+    assert [(m["text"], m["private"]) for m in await memories(client)] == [(CAT, True)]
+
+
+async def test_a_private_memory_in_an_older_package_is_refused(
+    make_client: ClientFactory,
+):
+    client = remembering(make_client)
+    res = await import_package(
+        client,
+        memories_package(packaged_memory(1, CAT, private=True), format=5),
+        "memories",
+    )
+
+    assert res.status_code == 422, res.text
+    assert res.json()["code"] == "broken"
+    assert await memories(client) == []
+
+
+async def test_a_memory_of_a_character_here_is_imported_beside_a_skipped_one(
+    make_client: ClientFactory,
+):
+    client = remembering(make_client)
+
+    res = await import_package(
+        client,
+        memories_package(
+            packaged_memory(1, CAT),
+            packaged_memory(2, TOKYO, source=("hazuki", "七草はづき")),
+            format=6,
+        ),
+        "memories",
+    )
+
+    assert res.status_code == 200, res.text
+    assert (res.json()["memories"], res.json()["memories_skipped"]) == (1, 1)
+    assert [m["text"] for m in await memories(client)] == [CAT]
+
+
+async def test_a_memory_superseding_a_skipped_one_is_skipped_too(
+    make_client: ClientFactory,
+):
+    client = remembering(make_client)
+
+    res = await import_package(
+        client,
+        memories_package(
+            packaged_memory(1, CAT, superseded_by=2),
+            packaged_memory(2, TOKYO, source=("hazuki", "七草はづき")),
+            format=6,
+        ),
+        "memories",
+    )
+
+    assert res.status_code == 200, res.text
+    assert (res.json()["memories"], res.json()["memories_skipped"]) == (0, 2)
+    assert await memories(client) == []
 
 
 async def test_she_recalls_imported_memories_in_her_next_turn(make_client: ClientFactory):

@@ -912,6 +912,10 @@ export type DataPackageImported = {
   conversations: number;
   photos: number;
   memories: number;
+  /** Memories not imported: their source character is not here, or a memory they supersede was skipped. */
+  memories_skipped: number;
+  /** Memories already here whose visibility the package changed; their owner is unchanged. */
+  memories_updated: number;
   /** Whether the producer profile was overwritten. */
   profile: boolean;
   /** Her conversations not imported: she is not on this deployment. */

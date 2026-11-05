@@ -13,7 +13,7 @@ export const CATEGORIES = ["conversations", "photos", "memories", "profile", "cy
 export type Category = (typeof CATEGORIES)[number];
 
 /** 这一版能读的最新格式，和后端 `data_package.FORMAT` 一样。 */
-export const FORMAT = 5;
+export const FORMAT = 6;
 
 const MANIFEST = "manifest.json";
 
@@ -130,7 +130,7 @@ function fromManifest(decoder: TextDecoder, chunks: Uint8Array[]): ManifestReadi
   return { kind: "package", categories: CATEGORIES.filter((category) => categories.includes(category)) };
 }
 
-/** 导入完的一句话：导入了什么（只算这次新加的），跳过了和谁的几段对话、几条周期记录、几封信。 */
+/** 导入完的一句话：导入了什么（只算这次新加的），跳过了和谁的几段对话、几条记忆、几条周期记录、几封信，改了几条记忆的可见范围。 */
 export function importSummary(result: DataPackageImported): string {
   const t = copy.settings.dataPackage;
   const counts = [
@@ -148,6 +148,8 @@ export function importSummary(result: DataPackageImported): string {
     const skipped = result.skipped.map((s) => t.skippedPart(s.character_name, s.conversations)).join(t.separator);
     imported += t.skipped(skipped, result.skipped.length > 1);
   }
+  if (result.memories_skipped > 0) imported += t.skippedMemories(result.memories_skipped);
+  if (result.memories_updated > 0) imported += t.updatedMemories(result.memories_updated);
   if (result.cycles_skipped > 0) imported += t.skippedCycles(result.cycles_skipped);
   return result.letters_skipped > 0 ? imported + t.skippedLetters(result.letters_skipped) : imported;
 }

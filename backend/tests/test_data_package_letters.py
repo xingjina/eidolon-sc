@@ -85,7 +85,7 @@ async def test_her_letters_move_to_another_deployment_as_they_were_read_and_with
     again = await import_package(there, package, "letters")
 
     assert (manifest["format"], manifest["categories"], manifest["counts"]) == (
-        5, ["letters"], {"letters": 1}
+        6, ["letters"], {"letters": 1}
     )
     [kept] = data["letters"]
     assert kept == PACKAGED_LETTER | {"written_at": kept["written_at"]}

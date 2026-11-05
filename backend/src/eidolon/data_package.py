@@ -81,11 +81,12 @@ from eidolon.store import (
     write_profile,
 )
 
-FORMAT = 5
+FORMAT = 6
 """The newest format this version reads, and the one it exports. Changing the format adds
 one to it, and keeps reading the older ones: 2 added her reach-outs (`reach_outs`), 3 her
 being unwell among the events (`unwell`) and the periods the user wrote down (`cycles`), 4
-the producer's city in the profile (`city`), 5 the letters she wrote (`letters`)."""
+the producer's city in the profile (`city`), 5 the letters she wrote (`letters`), 6 whether
+a memory is private (`private`)."""
 
 REACH_OUTS_SINCE = 2
 """The format whose conversations first held her reach-outs: before it, none may."""
@@ -101,6 +102,9 @@ CITY_SINCE = 4
 
 LETTERS_SINCE = 5
 """The format whose packages first held the letters she wrote: before it, none may."""
+
+PRIVATE_SINCE = 6
+"""The format whose packages first said whether a memory is private: before it, none may."""
 
 Category = Literal["conversations", "photos", "memories", "profile", "cycles", "letters"]
 CATEGORIES: tuple[Category, ...] = get_args(Category)
@@ -511,6 +515,9 @@ class PackagedMemory(_Strict):
     text: Annotated[str, Field(min_length=1, max_length=MAX_MEMORY_LENGTH)]
     created_at: Time
     superseded_by: PackageId | None
+    private: bool | None = None
+    """Whether only its source character may recall it; None in a package from before format
+    6, which adds a public memory and leaves one already here as it was."""
 
     @classmethod
     def of(cls, memory: Memory, with_conversations: bool) -> "PackagedMemory":
@@ -524,6 +531,7 @@ class PackagedMemory(_Strict):
             text=memory.text,
             created_at=_stored_time(memory.created_at),
             superseded_by=memory.superseded_by,
+            private=memory.private,
         )
 
     def carried(self, conversations: Mapping[PackageKey, str]) -> CarriedMemory:
@@ -537,6 +545,7 @@ class PackagedMemory(_Strict):
             superseded_by=self.superseded_by,
             conversation_id=None if self.conversation is None
             else conversations.get(self.conversation),
+            private=self.private,
         )
 
 
@@ -675,14 +684,19 @@ class Skipped:
 
 @dataclass
 class Imported:
-    """What an import added: only what is new, so importing the same package twice adds
-    nothing the second time. `profile` is whether the producer profile was overwritten with
-    one other than it was."""
+    """What an import added or changed: only what is new, so importing the same package twice
+    adds nothing the second time, except the visibility of memories already here.
+    `profile` is whether the producer profile was overwritten with one other than it was."""
 
     conversations: int = 0
     photos: int = 0
     """Only those sent, with their pictures: one not sent says only that she did not send it."""
     memories: int = 0
+    memories_skipped: int = 0
+    """Memories not imported: their source character is not here, or a memory they supersede
+    was skipped."""
+    memories_updated: int = 0
+    """Memories already here whose visibility the package changed; their owner is unchanged."""
     profile: bool = False
     skipped: list[Skipped] = field(default_factory=list)
     cycles: int = 0
@@ -924,7 +938,7 @@ class DataPackages:
                 data.conversations, unpacked, with_photos="photos" in categories
             )
         if "memories" in categories and data.memories is not None:
-            unpacked.memories = data.memories
+            self._unpack_memories(data.memories, unpacked)
         if "cycles" in categories and data.cycles is not None:
             unpacked.cycles = [
                 c.carried() for c in data.cycles if c.character_id in self._characters
@@ -937,6 +951,27 @@ class DataPackages:
             ]
             unpacked.letters_skipped = len(data.letters) - len(unpacked.letters)
         return unpacked
+
+    def _unpack_memories(
+        self, packaged: list[PackagedMemory], unpacked: "_Unpacked"
+    ) -> None:
+        """Put into `unpacked` the package's memories to add: those whose source character is
+        here, and whose superseding memory is added too. The others are skipped: a memory
+        whose source is not here would have no character strip to appear in, and one told to
+        supersede a skipped memory would have nothing to point at."""
+        here = [m for m in packaged if m.source_character_id in self._characters]
+        ids = {m.id for m in here}
+        while True:
+            broken = {
+                m.id for m in here
+                if m.superseded_by is not None and m.superseded_by not in ids
+            }
+            if not broken:
+                break
+            here = [m for m in here if m.id not in broken]
+            ids -= broken
+        unpacked.memories = here
+        unpacked.memories_skipped = len(packaged) - len(here)
 
     def _unpack_conversations(
         self, packaged: list[PackagedConversation], unpacked: "_Unpacked", with_photos: bool
@@ -983,6 +1018,9 @@ class _Unpacked:
     conversations: list[_Carried] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
     memories: list[PackagedMemory] = field(default_factory=list)
+    memories_skipped: int = 0
+    """The memories not to add: their source character is not here, or a memory they supersede
+    is skipped."""
     cycles: list[cycle_records.Carried] = field(default_factory=list)
     """The periods written down to add, of characters here."""
     cycles_skipped: int = 0
@@ -1014,7 +1052,11 @@ def _write_import(
 ) -> Imported:
     """Add what of a package is `unpacked` to the user's data through `db`, in the caller's
     transaction, as an import they made `now`; what it added."""
-    imported = Imported(skipped=unpacked.skipped, letters_skipped=unpacked.letters_skipped)
+    imported = Imported(
+        skipped=unpacked.skipped,
+        letters_skipped=unpacked.letters_skipped,
+        memories_skipped=unpacked.memories_skipped,
+    )
     if unpacked.profile is not None and unpacked.profile != read_profile(db, user_id):
         write_profile(db, user_id, unpacked.profile)
         imported.profile = True
@@ -1027,7 +1069,7 @@ def _write_import(
             imported.conversations += 1
             imported.photos += carried.photos
     if unpacked.memories:
-        imported.memories = add_carried(
+        imported.memories, imported.memories_updated = add_carried(
             db, user_id, [m.carried(here) for m in unpacked.memories]
         )
     if unpacked.cycles:
@@ -1086,6 +1128,10 @@ def _read(zipped: zipfile.ZipFile) -> tuple[Manifest, PackageData, dict[str, byt
             raise BrokenPackage("the producer's city in a format before it")
         if manifest.format < LETTERS_SINCE and data.letters is not None:
             raise BrokenPackage("letters in a format before them")
+        if manifest.format < PRIVATE_SINCE and any(
+            m.private for m in data.memories or []
+        ):
+            raise BrokenPackage("private memories in a format before them")
         listed = set(manifest.categories)
         held = {c for c in CATEGORIES if c != "photos" and getattr(data, c) is not None}
         photos = data.photos()
