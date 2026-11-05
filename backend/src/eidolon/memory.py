@@ -4,7 +4,7 @@ After each turn the background model reads the exchange and writes down, in Chin
 whatever the user revealed about themselves that is worth keeping. Each memory belongs
 to the user and names the character it was told to, its source character. All of a
 user's characters share their memories by default; a memory the user made private is
-found only by the character it was told to (ADR-0002, ADR-0033), and a character finding
+found only by the character it was told to (ADR-0002, ADR-0034), and a character finding
 a public one told to someone else is asked to pass it on as hearsay. Users never share
 theirs.
 
