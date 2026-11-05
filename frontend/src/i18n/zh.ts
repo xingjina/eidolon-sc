@@ -216,6 +216,9 @@ export const zh = {
     emptyTitle: (name: string) => `和${name}打个招呼吧`,
     emptyDescription: "打字，或者点右上角的电话和她通话。",
     replying: (name: string) => `${name}正在回复`,
+    /** 她在回合里查看时（GLOSSARY.md「查看」），对话里那条还没说完的回复和通话层的台词卡底部写这句；`what` 是下面几项用「、」连起来。 */
+    lookingUp: (name: string, what: string) => `${name}正在${what}`,
+    looks: { weather: "看天气", schedule: "翻日程", story: "回忆" },
     /** 对话事件（GLOSSARY.md「对话事件」）给用户看的一句话：消息区的分隔线和列表的「最后一句」都用它。 */
     events: {
       hung_up: (name: string) => `${name}挂断了电话`,
@@ -2205,10 +2208,16 @@ export const zh = {
       /** 周视图的标题和两边的翻页键。 */
       thisWeek: "本周",
       nextWeek: "下周",
+      lastWeek: "上周",
       range: (from: string, to: string) => `${from} – ${to}`,
       previous: "上周",
       next: "下周",
+      /** 翻到往周时标题后面的按钮。 */
+      backToThisWeek: "回到本周",
       unpublished: "本周的工作北京时间周一 0:00 发布",
+      /** 往周没有保存过的工作时，格子的位置写这一句；「只看她」时是第二句。 */
+      emptyWeek: "这周没有排日程",
+      emptyWeekHers: "这周没有她的日程",
       /** 没有工作的已过、进行中的格子。 */
       past: "已过",
       underWay: "进行中",
