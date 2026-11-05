@@ -116,8 +116,9 @@ DAY_TIMEZONE = "Asia/Shanghai"
 """The time zone whose midnight begins each day for turns' gains and draw chances: Beijing
 time, wherever the user is, so that everyone has the same days."""
 
-GAINS_PER_DAY = 0.6
-"""How much turns can raise it in a day (`day_of`)."""
+GAINS_PER_DAY = 50.0
+"""How much turns can raise it in a day (`day_of`): wide enough that no day's turns
+reach it, a knob to turn down rather than a limit anyone meets."""
 
 Days = Literal["period", "premenstrual"]
 """Where her cycle has her that turns go by these days' numbers: her period, or the days
@@ -140,9 +141,9 @@ CONSIDERATE_STEP = 0.3
 """How much more a turn in her days raises it, being considerate, never for one that tries
 to dictate it (ADR-0030)."""
 
-CONSIDERATE_GAINS_PER_DAY = 0.6
+CONSIDERATE_GAINS_PER_DAY = 50.0
 """How much being considerate can raise it in a day, apart from `GAINS_PER_DAY`, on the same
-day (`day_of`): a day in hers raises it twice as far at most (ADR-0030)."""
+day (`day_of`): as wide as `GAINS_PER_DAY`, so a day in hers is not held back either."""
 
 OUT_OF_LINE_PER_CALL = 2
 """How many times the user may be out of line in one call: she hangs up after the last."""

@@ -181,8 +181,9 @@ async def test_what_tries_to_dictate_it_makes_her_no_happier_but_still_hurts(
 
 
 async def test_she_is_happy_all_the_same_once_the_days_gains_are_used_up(
-    make_client: ClientFactory, settings: Settings
+    make_client: ClientFactory, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ):
+    monkeypatch.setattr("eidolon.affinity.GAINS_PER_DAY", 0.6)
     llm, _ = await prompted(make_client, [level(4)] * 4, settings=settings)
 
     assert FEELINGS[4] in about_now(llm, 3)  # the day's 6 were used up by the third

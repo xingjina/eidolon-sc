@@ -138,8 +138,10 @@ async def test_out_of_line_lowers_it_by_ten_and_dictating_it_never_raises_it(
 
 
 async def test_turns_raise_it_by_0_6_a_day_at_most_the_day_in_beijing(
-    make_client: ClientFactory, settings: Settings
+    make_client: ClientFactory, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ):
+    monkeypatch.setattr("eidolon.affinity.GAINS_PER_DAY", 0.6)
+    monkeypatch.setattr("eidolon.affinity.CONSIDERATE_GAINS_PER_DAY", 0.6)
     clock = FakeClock()  # 12:00 UTC, 20:00 in Beijing, 21:00 in Tokyo
     clients = FakeServiceClients()
     clients.judge.judgings = [
@@ -165,8 +167,10 @@ async def test_turns_raise_it_by_0_6_a_day_at_most_the_day_in_beijing(
 
 
 async def test_what_the_steps_fractions_leave_of_the_day_is_no_sliver_to_raise_it_by(
-    make_client: ClientFactory, settings: Settings
+    make_client: ClientFactory, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ):
+    monkeypatch.setattr("eidolon.affinity.GAINS_PER_DAY", 0.6)
+    monkeypatch.setattr("eidolon.affinity.CONSIDERATE_GAINS_PER_DAY", 0.6)
     clock = FakeClock()
     clients = FakeServiceClients()
     clients.judge.judgings = [level(3)] * 7
