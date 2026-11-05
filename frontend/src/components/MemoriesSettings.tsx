@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { CharacterStrip } from "@/components/app/CharacterStrip";
 import { FailureNotice } from "@/components/app/FailureNotice";
-import { MarkedAvatar } from "@/components/app/MarkedAvatar";
 import { PROSE_WIDTH } from "@/components/app/SettingsSection";
 import { useDirectory } from "@/components/conversations/ConversationDirectory";
+import { MemoryRow } from "@/components/memories/MemoryRow";
 import { SettingsPane } from "@/components/settings/SettingsPane";
 import { useSettingsValues } from "@/components/settings/SettingsValues";
 import {
@@ -18,7 +19,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,8 +31,9 @@ import {
 } from "@/components/ui/dialog";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { copy } from "@/i18n";
 import {
   ApiError,
@@ -44,16 +45,32 @@ import {
   type Memory,
 } from "@/lib/api";
 import { toFailure, type Failure } from "@/lib/failure";
-import { sourceCharacter, supersededMark } from "@/lib/memories";
+import {
+  characterMemoryCounts,
+  charactersWithMemories,
+  defaultCharacterId,
+  memoriesOfCharacter,
+  memoryCountsByCharacter,
+  publicMemories,
+  sourceCharacter,
+  type MemoryFilter,
+} from "@/lib/memories";
 import { cn } from "@/lib/utils";
-import { EditRecordIcon, TrashIcon } from "@/theme/icons";
+import { SuccessIcon } from "@/theme/icons";
 
 const t = copy.memories;
 
+type Tab = "public" | "character";
+
+/** 改完可见范围后的一行提示：「去看」按需要切到对应的 Tab / 角色 / 过滤。 */
+type Notice = { text: string; action?: { label: string; onClick: () => void } };
+
 /**
- * 设置「记忆」：所有角色共用的、关于用户的记忆。可以改文字（改完她会重新记住新的说法），
- * 被取代的可以「恢复」让它重新生效；删除与清空照旧，都要先确认，执行键是挂断红。
- * 每条都标出来源角色；被取代的原地列出，淡一些并标出来。记忆是一行一行的列表（细分隔线，不套卡片）。
+ * 设置「记忆」：两个 Tab。
+ * - 公共记忆：所有角色的公共记忆放在一起，行样式和以前一样。
+ * - 角色记忆：只列有自己记忆的角色；选中后看她自己的公共 + 私有，私有的行铺她的颜色，
+ *   上方用「全部 / 公共 / 私有」过滤（所有角色共享这个状态）。
+ * 改公共/私有仍然走行尾铅笔 + 编辑弹窗，只改这一条的可见范围，不换主人。
  * 「清空」在二级页首的末端。条数一变就告诉设置的 layout，一级「记忆」的摘要跟着变。
  */
 export function MemoriesSettings() {
@@ -75,8 +92,13 @@ export function MemoriesSettings() {
   // 只用最后一次重新取到的列表：连着删几条时，先发出的那次晚到，会把后删的又列出来。
   const refetches = useRef(0);
   const { memoryCountChanged } = useSettingsValues();
-  // 只用来给来源角色配头像；还没载入时照样列出记忆。
-  const characters = useDirectory().characters ?? [];
+  // 记忆页用肖像头像，不受「外观 - SCSP 头像」影响；还没载入时为空，记忆行照旧按名字兜底。
+  const { configuredCharacters } = useDirectory();
+  const characters = configuredCharacters ?? [];
+  const [tab, setTab] = useState<Tab>("public");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [filter, setFilter] = useState<MemoryFilter>("all");
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   useEffect(() => {
     listMemories().then(setMemories, (e) => setFailure(toFailure(e)));
@@ -86,6 +108,19 @@ export function MemoriesSettings() {
   useEffect(() => {
     if (count !== undefined) memoryCountChanged(count);
   }, [count, memoryCountChanged]);
+
+  const publicList = memories ? publicMemories(memories) : [];
+  const owners = memories ? charactersWithMemories(characters, memories) : [];
+  const defaultId = memories ? defaultCharacterId(characters, memories) : null;
+  const selectedId = picked && owners.some((c) => c.id === picked) ? picked : defaultId;
+  const selected = owners.find((c) => c.id === selectedId) ?? null;
+  const selectedCounts = selected
+    ? characterMemoryCounts(memories ?? [], selected.id)
+    : { all: 0, publicCount: 0, privateCount: 0 };
+  const countsByOwner = memoryCountsByCharacter(memories ?? []);
+  const rows = selected ? memoriesOfCharacter(memories ?? [], selected.id, filter) : [];
+  const publicCount = publicList.length;
+  const privateCount = (memories?.length ?? 0) - publicCount;
 
   const forget = (id: number) => setMemories((list) => list?.filter((m) => m.id !== id) ?? null);
 
@@ -99,6 +134,7 @@ export function MemoriesSettings() {
     setConfirmingDelete(false);
     setDeleting((ids) => new Set(ids).add(id));
     setFailure(null);
+    setNotice(null);
     try {
       await deleteMemory(id);
       forget(id);
@@ -124,6 +160,7 @@ export function MemoriesSettings() {
       await clearMemories();
       setMemories([]);
       setConfirmingClear(false);
+      setNotice(null);
     } catch (e) {
       setFailure(toFailure(e));
       setConfirmingClear(false);
@@ -137,6 +174,7 @@ export function MemoriesSettings() {
     setDraft(memory.text);
     setDraftPrivate(memory.private);
     setEditFailure(null);
+    setNotice(null);
   }
 
   function closeEditing() {
@@ -157,6 +195,9 @@ export function MemoriesSettings() {
       return;
     }
     const id = editing.id;
+    const ownerId = editing.source_character_id;
+    const ownerName = editing.source_character_name ?? t.goneCharacter;
+    const wasPrivate = editing.private;
     setSaving(true);
     setEditFailure(null);
     try {
@@ -167,6 +208,34 @@ export function MemoriesSettings() {
       setEditing(null);
       setDraft("");
       setDraftPrivate(false);
+      if (wasPrivate === privateNow) return;
+      if (privateNow) {
+        // 公共页改成私有：行离开公共页，回到主人的角色记忆；在角色页里只是换颜色。
+        setNotice({
+          text: tab === "public" ? t.movedToPrivate(ownerName) : t.nowPrivate(ownerName),
+          action:
+            tab === "public" || filter === "public"
+              ? {
+                  label: t.goSee,
+                  onClick: () => {
+                    setTab("character");
+                    setPicked(ownerId);
+                    setFilter("private");
+                    setNotice(null);
+                  },
+                }
+              : undefined,
+        });
+      } else {
+        // 私有改成公共：公共页多一条；角色页在「私有」过滤下会离开当前列表。
+        setNotice({
+          text: tab === "public" ? t.movedToPublic : t.nowPublic,
+          action:
+            tab === "character" && filter === "private"
+              ? { label: t.goSee, onClick: () => setFilter("public") }
+              : undefined,
+        });
+      }
     } catch (e) {
       setEditFailure(toFailure(e));
     } finally {
@@ -193,6 +262,12 @@ export function MemoriesSettings() {
   }
 
   const hasMemories = !!memories && memories.length > 0;
+  const pendingName = pendingDelete?.source_character_name ?? t.goneCharacter;
+  const pendingDescription = pendingDelete
+    ? pendingDelete.private
+      ? t.removeDescriptionPrivate(pendingDelete.text, pendingName)
+      : t.removeDescription(pendingDelete.text)
+    : "";
 
   return (
     <SettingsPane
@@ -219,84 +294,131 @@ export function MemoriesSettings() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <ul className="flex flex-col divide-y">
-            {memories.map((memory) => {
-              const source = sourceCharacter(memory, characters);
-              const name = memory.source_character_name ?? t.goneCharacter;
-              const created = new Date(memory.created_at);
-              const mark = supersededMark(memory);
-              const busy = deleting.has(memory.id);
-              const restoringThis = restoring.has(memory.id);
-              return (
-                <li key={memory.id} className="flex items-start gap-3 py-4">
-                  <div className="pt-0.5">
-                    <MarkedAvatar name={name} src={source?.avatar_url} size="sm" />
-                  </div>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <p className={cn("text-body break-words", mark && "text-muted-foreground")}>{memory.text}</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {mark && <Badge variant="secondary">{mark}</Badge>}
-                      {memory.private && <Badge variant="outline">{t.privateBadge(name)}</Badge>}
-                      <span className="text-subtitle text-muted-foreground">
-                        {t.toldTo(name)} · {t.date(created.getFullYear(), created.getMonth() + 1, created.getDate())}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={t.editLabel(memory.text)}
-                            disabled={busy || clearing}
-                            onClick={() => startEditing(memory)}
-                          />
-                        }
-                      >
-                        <EditRecordIcon />
-                      </TooltipTrigger>
-                      <TooltipContent>{t.edit}</TooltipContent>
-                    </Tooltip>
-                    {memory.superseded && (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy || restoringThis || clearing}
-                              onClick={() => restore(memory)}
-                            />
-                          }
-                        >
-                          {restoringThis ? <Spinner /> : t.restore}
-                        </TooltipTrigger>
-                        <TooltipContent>{t.restoreLabel(memory.text)}</TooltipContent>
-                      </Tooltip>
-                    )}
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={t.removeLabel(memory.text)}
-                            disabled={busy || clearing}
-                            onClick={() => askToRemove(memory)}
-                          />
-                        }
-                      >
-                        {busy ? <Spinner /> : <TrashIcon />}
-                      </TooltipTrigger>
-                      <TooltipContent>{t.remove}</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <Tabs
+              value={tab}
+              onValueChange={(value) => {
+                if (value !== "public" && value !== "character") return;
+                setTab(value as Tab);
+                setNotice(null);
+              }}
+            >
+              <TabsList aria-label={t.tabsLabel} className="w-full">
+                <TabsTrigger value="public" className="flex-1">
+                  {t.publicTab}
+                </TabsTrigger>
+                <TabsTrigger value="character" className="flex-1">
+                  {t.characterTab}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {notice && (
+              <div role="status" className="flex flex-wrap items-center gap-2 text-body text-muted-foreground">
+                <SuccessIcon className="size-4 shrink-0" />
+                <span>{notice.text}</span>
+                {notice.action && (
+                  <Button variant="ghost" size="sm" onClick={notice.action.onClick}>
+                    {notice.action.label}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {tab === "public" ? (
+              publicList.length === 0 ? (
+                <p className="py-8 text-center text-body text-muted-foreground">{t.publicTabEmpty}</p>
+              ) : (
+                <ul className="flex flex-col divide-y">
+                  {publicList.map((memory) => (
+                    <MemoryRow
+                      key={memory.id}
+                      memory={memory}
+                      source={sourceCharacter(memory, characters)}
+                      tinted={false}
+                      gutter={false}
+                      busy={deleting.has(memory.id)}
+                      restoring={restoring.has(memory.id)}
+                      disabled={clearing}
+                      onEdit={() => startEditing(memory)}
+                      onRemove={() => askToRemove(memory)}
+                      onRestore={() => restore(memory)}
+                    />
+                  ))}
+                </ul>
+              )
+            ) : configuredCharacters === null ? (
+              <p className="text-body text-muted-foreground">{t.loading}</p>
+            ) : owners.length === 0 || !selected ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>{t.charactersEmpty}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <>
+                <CharacterStrip
+                  characters={owners}
+                  picked={selectedId}
+                  onPick={(id) => {
+                    setPicked(id);
+                    setNotice(null);
+                  }}
+                  detail={(c) => t.count(countsByOwner.get(c.id) ?? 0)}
+                  pickLabel={(c) => t.pickLabel(c.name, countsByOwner.get(c.id) ?? 0)}
+                />
+                <ToggleGroup
+                  aria-label={t.filterLabel}
+                  variant="outline"
+                  size="sm"
+                  value={[filter]}
+                  onValueChange={(next) => {
+                    const [chosen] = next;
+                    if (chosen !== "all" && chosen !== "public" && chosen !== "private") return;
+                    setFilter(chosen);
+                    setNotice(null);
+                  }}
+                >
+                  <ToggleGroupItem value="all">
+                    {t.filters.all} {selectedCounts.all}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="public">
+                    {t.filters.public} {selectedCounts.publicCount}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="private">
+                    {t.filters.private} {selectedCounts.privateCount}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                {rows.length === 0 ? (
+                  <p className="py-8 text-center text-body text-muted-foreground">
+                    {filter === "private"
+                      ? t.privateEmpty
+                      : filter === "public"
+                        ? t.publicEmptyForHer
+                        : t.hersEmpty(selected.name)}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col divide-y">
+                    {rows.map((memory) => (
+                      <MemoryRow
+                        key={memory.id}
+                        memory={memory}
+                        source={sourceCharacter(memory, characters)}
+                        tinted={memory.private}
+                        gutter
+                        busy={deleting.has(memory.id)}
+                        restoring={restoring.has(memory.id)}
+                        disabled={clearing}
+                        onEdit={() => startEditing(memory)}
+                        onRemove={() => askToRemove(memory)}
+                        onRestore={() => restore(memory)}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -313,13 +435,20 @@ export function MemoriesSettings() {
             rows={4}
             aria-label={t.editTitle}
           />
-          <label className="flex items-center gap-2 text-body">
-            <Checkbox
-              checked={draftPrivate}
-              onCheckedChange={(checked) => setDraftPrivate(checked === true)}
-            />
-            <span>{t.privateLabel(editing?.source_character_name ?? t.goneCharacter)}</span>
-          </label>
+          <div className="flex flex-col gap-1">
+            <label className="flex items-center gap-2 text-body">
+              <Checkbox
+                checked={draftPrivate}
+                onCheckedChange={(checked) => setDraftPrivate(checked === true)}
+              />
+              <span>{t.privateLabel(editing?.source_character_name ?? t.goneCharacter)}</span>
+            </label>
+            {editing && draftPrivate !== editing.private && (
+              <p className="text-subtitle text-muted-foreground">
+                {draftPrivate ? t.privateHintOn : t.privateHintOff}
+              </p>
+            )}
+          </div>
           {editFailure && <FailureNotice failure={editFailure} />}
           <DialogFooter>
             <Button variant="ghost" onClick={closeEditing} disabled={saving}>
@@ -337,9 +466,7 @@ export function MemoriesSettings() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t.removeTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete ? t.removeDescription(pendingDelete.text) : ""}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{pendingDescription}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{copy.common.cancel}</AlertDialogCancel>
@@ -354,7 +481,9 @@ export function MemoriesSettings() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t.clearTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{t.clearDescription(memories?.length ?? 0)}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {t.clearDescription(memories?.length ?? 0, publicCount, privateCount)}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={clearing}>{copy.common.cancel}</AlertDialogCancel>

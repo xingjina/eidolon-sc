@@ -73,6 +73,8 @@ export type Directory = {
   accountChanged: (change: Account | ((account: Account) => Account)) => void;
   /** 还在载入时为 null。头像已经按外观换好（打开 SCSP 头像时是她的 SCSP 头像）。 */
   characters: Character[] | null;
+  /** 还没有按外观换过头像的角色列表；记忆页用她的肖像头像，不受 SCSP 头像开关影响。还在载入时为 null。 */
+  configuredCharacters: Character[] | null;
   /** 和每位最新一次对话的摘要；标签页在前台时每分钟重新拉一次。她的对话一读到，她那一行就先在本地记成搭话都看过了。 */
   latest: Record<string, LatestConversation>;
   failure: Failure | null;
@@ -504,6 +506,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
         account,
         accountChanged,
         characters,
+        configuredCharacters: configured,
         latest,
         preferences,
         tidy,

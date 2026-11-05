@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { CharacterStrip } from "@/components/app/CharacterStrip";
 import { FailureNotice } from "@/components/app/FailureNotice";
-import { MarkedAvatar } from "@/components/app/MarkedAvatar";
 import { useDirectory, useWide } from "@/components/conversations/ConversationDirectory";
 import { CycleGuide, guideAnchor } from "@/components/play/CycleGuide";
 import { PlayShell, PlaySubpageHeader } from "@/components/play/PlayShell";
@@ -49,7 +49,6 @@ import {
 import { toFailure } from "@/lib/failure";
 import { playTitle } from "@/lib/playCards";
 import { closedPlayRedirect, playHref } from "@/lib/playRoute";
-import { shortName } from "@/lib/schedule";
 import { cn } from "@/lib/utils";
 import { herVars } from "@/theme/herVars";
 import {
@@ -185,11 +184,15 @@ export function CyclesSubpage({ who }: { who: string | null }) {
           </label>
           <ShownFilter filter={filter} counts={filterCounts(hers)} onChange={setFilter} />
         </div>
-        <AvatarStrip
+        <CharacterStrip
           characters={stripOf(characters, hers, { filter, query, picked: character.id })}
           picked={character.id}
-          noMatch={query.trim() !== "" && stripOf(characters, hers, { filter, query, picked: null }).length === 0}
           onPick={pick}
+          noMatch={
+            query.trim() !== "" && stripOf(characters, hers, { filter, query, picked: null }).length === 0 ? (
+              <p className="self-center px-2 text-body text-muted-foreground">{copy.conversationList.noMatch}</p>
+            ) : null
+          }
         />
       </div>
       <div className="grid items-start gap-6 md:grid-cols-[1fr_15rem]">
@@ -291,41 +294,6 @@ function ShownFilter({
         </DrawerContent>
       </Drawer>
     </>
-  );
-}
-
-/** 一排可横滑的头像条：48px 头像加短名，选中的铺中性 `bg-muted`。 */
-function AvatarStrip({
-  characters,
-  picked,
-  noMatch,
-  onPick,
-}: {
-  characters: Character[];
-  picked: string;
-  noMatch: boolean;
-  onPick: (id: string) => void;
-}) {
-  return (
-    <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1">
-      {characters.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          aria-pressed={c.id === picked}
-          aria-label={c.name}
-          onClick={() => onPick(c.id)}
-          className={cn(
-            "flex w-16 shrink-0 flex-col items-center gap-1 rounded-xl py-2 outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50",
-            c.id === picked && "bg-muted hover:bg-muted",
-          )}
-        >
-          <MarkedAvatar name={c.name} src={c.avatar_url} />
-          <span className="w-full truncate px-1 text-center text-meta">{shortName(c)}</span>
-        </button>
-      ))}
-      {noMatch && <p className="self-center px-2 text-body text-muted-foreground">{copy.conversationList.noMatch}</p>}
-    </div>
   );
 }
 

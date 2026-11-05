@@ -351,12 +351,12 @@ flowchart LR
 
 ## Memory
 
-She remembers what you tell her about yourself, and all of a user's characters share these memories: tell Hiori something and Kogane will know too, but she'll bring it up as "Hiori told me…" ([ADR-0002](adr/0002-shared-memory-with-source-character.md)). Different users are fully isolated. Memory turns on together with retrieval.
+She remembers what you tell her about yourself. By default all of a user's characters share these memories (public memories): tell Hiori something and Kogane will know too, but she'll bring it up as "Hiori told me…" ([ADR-0002](adr/0002-shared-memory-with-source-character.md)). A memory can also be made private in the edit dialog: only the character it was told to can recall it, and other characters don't know ([ADR-0033](adr/0033-memories-by-owner-with-private-range.md)). The memories page has two views, 「公共记忆」 (public memories) and 「角色记忆」 (character memories). Different users are fully isolated. Memory turns on together with retrieval.
 
 - **Writing down**: After each turn, the background model reads the exchange and writes what is worth keeping long term as memories in Chinese (e.g. 「制作人领养了一只叫小白的猫」, "the producer adopted a cat named Xiaobai"), recording the source character. Relative times like "next Saturday" are converted to dates in the user's time zone. States that pass the same day (tired, sleepy) are not kept, and things already remembered are not duplicated. This runs in the background without holding up the reply.
 - **Superseding**: When things change or are told more fully, a new memory supersedes the old one. The old one is no longer remembered, but stays listed on the memories page, marked 「已被取代」 (superseded). Delete the memory that superseded it, and the old one comes back ([ADR-0014](adr/0014-superseded-memories-are-marked-not-rewritten.md)).
 - **Remembering**: When the user talks about their own life, up to 3 relevant memories go into the prompt, each labeled with its source character and date. A new conversation picks up earlier topics only through memories.
-- **Management**: 「管理记忆」 (Manage memories) on the settings page's 「档案」 (Profile) tab lists every memory. Users can delete them one at a time or clear them all at once, but can't add or edit them by hand.
+- **Management**: The settings page's 「记忆」 (Memories) has two views, 「公共记忆」 (Public memories) and 「角色记忆」 (Character memories). Users can edit a memory's text and whether it is public or private, restore a superseded one, delete one at a time or clear them all, but can't add memories by hand.
 
 ## Affinity and gifts
 

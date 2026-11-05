@@ -126,7 +126,7 @@ All **28 idols** from the game's eight units, plus the office clerk Nanakusa Haz
 
 - 📖 **Story recall**: Once the story corpus is imported, she recalls only the canon episodes **she appears in**.
 - 🔄 **Kept in step with the game**: One command syncs the fan translations and the Japanese originals, so new cards and events can be recalled within a week. Songs and lives are in her world setting too.
-- 🧠 **Memory shared across characters**: Tell Hiori something and Kogane will know too, and bring it up as "Hiori told me…" ([ADR-0002](docs/adr/0002-shared-memory-with-source-character.md)). You can see and delete everything she remembers.
+- 🧠 **Memory shared across characters**: Tell Hiori something and Kogane will know too, and bring it up as "Hiori told me…" ([ADR-0002](docs/adr/0002-shared-memory-with-source-character.md)). You can also make a memory private to the character it was told to; you can see and delete everything she remembers.
 - 🗂️ **Past conversations**: Start a new conversation any time; the old ones stay to read back, or to delete.
 - 🪪 **Producer profile**: How she addresses you, your gender, time zone and birthday are all in settings; on your birthday she wishes you a happy one.
 - 📊 **Stats**: See how many turns, call minutes and gifts you've shared with them, and export a share image.

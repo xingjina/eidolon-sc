@@ -3,8 +3,10 @@
 After each turn the background model reads the exchange and writes down, in Chinese,
 whatever the user revealed about themselves that is worth keeping. Each memory belongs
 to the user and names the character it was told to, its source character. All of a
-user's characters share their memories, and a character finding one told to someone
-else is asked to pass it on as hearsay (ADR-0002); users never share theirs.
+user's characters share their memories by default; a memory the user made private is
+found only by the character it was told to (ADR-0002, ADR-0033), and a character finding
+a public one told to someone else is asked to pass it on as hearsay. Users never share
+theirs.
 
 A turn goes `begin` → `candidates` → `find` → `write_down`. The turn's query (see
 `memory_query`) is embedded once, by whoever takes the turn (`retrieval`), and the vector
@@ -21,8 +23,9 @@ is shown the memories nearest the turn and says which of them the new memory sup
 but stays listed until the user deletes it; deleting what superseded it brings it back,
 unless that was superseded in turn, by what superseded that.
 
-Users can list their memories and delete them one by one or all at once, never add or
-edit them. Listing and deleting wait briefly for what is being written down too;
+Users can list their memories, edit a memory's text and whether it is private, restore a
+superseded one, and delete them one by one or all at once; they never add memories.
+Listing and deleting wait briefly for what is being written down too;
 whatever turns begun before a clearing write down after it is dropped, so a cleared
 memory never turns up again.
 
@@ -32,7 +35,7 @@ searched. After the embedding model changes, `eidolon reembed` embeds them all a
 
 Each turn writes down with the model it began with (see `OwnKeys.for_turn`). Without an
 embedder and reranker, memory is off: turns find and write down nothing, but users can
-still list and delete the memories already kept.
+still list, edit and delete the memories already kept.
 """
 
 import asyncio
