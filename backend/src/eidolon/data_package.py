@@ -81,12 +81,13 @@ from eidolon.store import (
     write_profile,
 )
 
-FORMAT = 6
+FORMAT = 7
 """The newest format this version reads, and the one it exports. Changing the format adds
 one to it, and keeps reading the older ones: 2 added her reach-outs (`reach_outs`), 3 her
 being unwell among the events (`unwell`) and the periods the user wrote down (`cycles`), 4
 the producer's city in the profile (`city`), 5 the letters she wrote (`letters`), 6 whether
-a memory is private (`private`)."""
+a memory is private (`private`), 7 the switches between face to face and the phone
+(`in_person`, `on_phone`)."""
 
 REACH_OUTS_SINCE = 2
 """The format whose conversations first held her reach-outs: before it, none may."""
@@ -105,6 +106,10 @@ LETTERS_SINCE = 5
 
 PRIVATE_SINCE = 6
 """The format whose packages first said whether a memory is private: before it, none may."""
+
+SCENE_SINCE = 7
+"""The format whose conversations first recorded the switches between face to face and the
+phone (「面对面」): before it, none may."""
 
 Category = Literal["conversations", "photos", "memories", "profile", "cycles", "letters"]
 CATEGORIES: tuple[Category, ...] = get_args(Category)
@@ -1132,6 +1137,14 @@ def _read(zipped: zipfile.ZipFile) -> tuple[Manifest, PackageData, dict[str, byt
             m.private for m in data.memories or []
         ):
             raise BrokenPackage("private memories in a format before them")
+        if manifest.format < SCENE_SINCE and any(
+            e.kind in ("in_person", "on_phone")
+            for c in data.conversations or []
+            for e in c.events
+        ):
+            raise BrokenPackage(
+                "the switches between face to face and the phone in a format before them"
+            )
         listed = set(manifest.categories)
         held = {c for c in CATEGORIES if c != "photos" and getattr(data, c) is not None}
         photos = data.photos()

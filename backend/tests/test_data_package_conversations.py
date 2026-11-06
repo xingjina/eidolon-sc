@@ -425,6 +425,35 @@ async def test_her_being_unwell_moves_as_it_was(
     assert (await records(there))[0][0]["kind"] == "unwell"
 
 
+async def test_the_switches_between_face_to_face_and_the_phone_move_with_the_conversation(
+    make_client: ClientFactory, settings: Settings, tmp_path: Path
+):
+    here = deployment(make_client, settings, tmp_path, "here", REPLY)
+    conversation = await start_conversation(here)
+    await send_turn(here, conversation, "ここにいる？")
+    switched = await here.post(
+        f"/api/conversations/{conversation}/scene", json={"in_person": True}
+    )
+    assert switched.json()["event"]["kind"] == "in_person"
+    there = deployment(make_client, settings, tmp_path, "there")
+
+    package = await export(here, "conversations")
+    _, manifest, data = unzipped(package)
+    [packaged] = data["conversations"][0]["events"]
+    imported = await import_package(there, package, "conversations")
+
+    assert manifest["format"] == data_package.FORMAT
+    assert packaged["kind"] == "in_person" and packaged["gift_id"] is None
+    assert imported.status_code == 200, imported.text
+    assert await records(there) == await records(here)
+    [current] = await hers(there)
+    # 导入后还是面对面：再点一次「面对面」不记第二条，说明当前模式跟着包过来了
+    again = await there.post(
+        f"/api/conversations/{current['id']}/scene", json={"in_person": True}
+    )
+    assert again.json()["event"] is None
+
+
 async def test_conversations_not_in_the_format_are_refused(
     make_client: ClientFactory, settings: Settings, tmp_path: Path
 ):
@@ -457,6 +486,12 @@ async def test_conversations_not_in_the_format_are_refused(
     unwell_broken = {
         "her being unwell in the format before it": [good | {"events": [UNWELL]}],
     }
+    scene_broken = {
+        "the face-to-face switches in the format before them": [good | {"events": [
+            {"kind": "in_person", "created_at": good["created_at"], "affinity": None,
+             "gift_id": None, "liked": False},
+        ]}],
+    }
     since_broken = {
         "her being unwell without since when": [good | {"events": [UNWELL | {"days_ago": None}]}],
         "since when for no such": [good | {"events": [
@@ -471,6 +506,7 @@ async def test_conversations_not_in_the_format_are_refused(
         (MANIFEST["format"], broken),
         (data_package.UNWELL_SINCE - 1, unwell_broken),
         (data_package.UNWELL_SINCE, since_broken),
+        (data_package.SCENE_SINCE - 1, scene_broken),
     ):
         for case, conversations in cases.items():
             package = conversations_package(*conversations, version=version)

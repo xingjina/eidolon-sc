@@ -122,7 +122,7 @@ async def test_the_producer_profile_moves_to_another_deployment(
     entries, manifest, data = unzipped(package)
     assert [e.filename for e in entries] == ["manifest.json", "data.json"]
     assert entries[0].compress_type == zipfile.ZIP_STORED
-    assert manifest["format"] == 6
+    assert manifest["format"] == 7
     assert manifest["categories"] == ["profile"]
     assert manifest["counts"] == {"profile": 1}
     assert data == {"profile": {
@@ -221,9 +221,9 @@ async def test_a_package_from_a_newer_version_is_refused_whatever_its_entries(
     make_client: ClientFactory,
 ):
     client = make_client(FakeLLM())
-    newer = json.dumps({**MANIFEST, "format": 7, "categories": ["albums"]})
+    newer = json.dumps({**MANIFEST, "format": 8, "categories": ["albums"]})
     packages = {
-        "entries as now": package_of({**MANIFEST, "format": 7, "categories": ["albums"]}, {}),
+        "entries as now": package_of({**MANIFEST, "format": 8, "categories": ["albums"]}, {}),
         "no data.json, entries of its own": _zip(
             {"manifest.json": newer, "albums.json": "{}", "albums/1.json": "{}"}
         ),
@@ -400,7 +400,7 @@ async def test_a_private_memory_moves_to_another_deployment_private(
 
     package = await export(here, "memories")
     _, manifest, data = unzipped(package)
-    assert manifest["format"] == 6
+    assert manifest["format"] == 7
     assert data["memories"][0]["private"] is True
     res = await import_package(there, package, "memories")
 
