@@ -9,6 +9,7 @@ import {
   ApiError,
   type CallEvent,
   type Conversation,
+  type ConversationEvent,
   type LatestConversation,
   type Look,
   type Photo,
@@ -300,6 +301,9 @@ export type Ports = {
   createConversation: (characterId: string) => Promise<Conversation>;
   /** A conversation's record; reading it has the user see her reach-outs in it. */
   listMessages: (conversationId: string) => Promise<Recorded[]>;
+  /** Makes the conversation face to face (「面对面」), or puts it back on the phone: the switch
+   * as recorded in its record, or null when it was already so. */
+  setScene: (conversationId: string, inPerson: boolean) => Promise<ConversationEvent | null>;
   /** The conversation list's line for her has changed: a turn was recorded, or a
    * conversation was started. Told even after the page is left. */
   onListChanged: () => void;
@@ -443,6 +447,24 @@ export class LiveConversation {
 
   setDraft(draft: string): void {
     this.update({ draft: draft.slice(0, MAX_INPUT_LENGTH) });
+  }
+
+  /**
+   * Make the conversation face to face (「面对面」), so that what the user types and says is
+   * said to her face, or put it back on the phone. The switch is recorded in the
+   * conversation's record, as an event the log shows; one she has ended takes none.
+   */
+  async setInPerson(inPerson: boolean): Promise<void> {
+    const conversationId = this.openConversationId();
+    if (!conversationId || isEnded(this.state)) return;
+    try {
+      const event = await this.ports.setScene(conversationId, inPerson);
+      if (!event) return;
+      this.apply({ type: "event", event });
+      this.ports.onListChanged();
+    } catch (e) {
+      this.update({ failure: toFailure(e) });
+    }
   }
 
   /** Send what is in the input box as a text turn. */

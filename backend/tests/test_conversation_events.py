@@ -202,3 +202,38 @@ async def test_a_database_that_kept_whether_she_responded_drops_it_and_keeps_its
     with sqlite3.connect(settings.database_path) as db:
         columns = {row[1] for row in db.execute("PRAGMA table_info(conversation_events)")}
     assert "responded" not in columns
+
+
+async def test_switching_face_to_face_is_recorded_once_and_she_is_told(
+    make_client: ClientFactory,
+):
+    """面对面 (GLOSSARY.md「面对面」): the switch is a conversation event, recorded once however
+    often it is asked for, and the turns after it are told she is right there; back on the
+    phone, they are not."""
+    llm = FakeLLM(REPLY, REPLY)
+    client = make_client(llm)
+    conversation = await start_conversation(client)
+
+    switched = await client.post(
+        f"/api/conversations/{conversation}/scene", json={"in_person": True}
+    )
+    assert switched.status_code == 200
+    assert switched.json()["in_person"] is True
+    assert switched.json()["event"]["kind"] == "in_person"
+
+    again = await client.post(
+        f"/api/conversations/{conversation}/scene", json={"in_person": True}
+    )
+    assert again.json()["event"] is None
+    assert shape(await record(client, conversation)) == ["in_person"]
+
+    await send_turn(client, conversation, "ここにいる？")
+    assert any("制作人就在你面前" in message.content for message in llm.prompts[-1])
+
+    back = await client.post(
+        f"/api/conversations/{conversation}/scene", json={"in_person": False}
+    )
+    assert back.json()["event"]["kind"] == "on_phone"
+
+    await send_turn(client, conversation, "戻ったよ")
+    assert not any("制作人就在你面前" in message.content for message in llm.prompts[-1])

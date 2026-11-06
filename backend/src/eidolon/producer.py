@@ -164,6 +164,20 @@ _TYPING = "制作人正在用文字和你聊天，你们没有在打电话；不
 _IN_A_CALL = "制作人正在和你打电话。"
 _APART = "你们这会儿没在说话。"
 _TALKING: dict[Talking, str] = {"typing": _TYPING, "in_call": _IN_A_CALL, "apart": _APART}
+_IN_PERSON_TYPING = (
+    "制作人就在你面前。他打字，是把话当面说给你听；你看得见他，也听得见他，不用等消息。"
+)
+_IN_PERSON_IN_A_CALL = (
+    "制作人就在你面前。他开着语音，你听到的是他当面的声音，不是在和他打电话。"
+)
+"""Face to face (「面对面」), the producer there: what she is told instead of `_TALKING`."""
+_IN_PERSON_PROMPTS = (
+    "制作人会拿方括号或圆括号写他此刻的动作、给你的演出提示，或者递到你手上的东西，"
+    "比如 [摸摸头]、（走过去）、[report.pdf]，也可能拿你的名字写你该有的样子，"
+    "比如 [你现在慌张，说话声音颤抖]。当面时他的动作是真的发生，你照自己的人设回应；"
+    "写给你的演出提示就照它演出来；递给你的东西就当收到了。"
+    "你自己只说话，不写动作、神态或旁白。"
+)
 _BIRTHDAY = (
     "今天是制作人的生日。请在合适的时候用你自己的方式祝福一次：先回应制作人说的话，不要每句都提。"
 )
@@ -193,19 +207,29 @@ def now_prompt(
     talking: Talking,
     affinity_lines: Sequence[str] = (),
     last_contact: datetime | None = None,
+    in_person: bool = False,
 ) -> str:
     """The prompt section about now: the time where the user is, how they are `talking` with
     the character, when they were `last_contact` in touch, if ever, and how long ago, and
     whether it is their birthday; then `affinity_lines`, how the character feels toward them
-    now (`affinity.affinity_prompt`)."""
+    now (`affinity.affinity_prompt`). With `in_person`, they are face to face (「面对面」), and
+    she is told what the producer's brackets in what he says mean."""
     zone = ZoneInfo(timezone)
     local = now.astimezone(zone)
+    face_to_face = in_person and talking != "apart"
+    said = (
+        (_IN_PERSON_IN_A_CALL if talking == "in_call" else _IN_PERSON_TYPING)
+        if face_to_face
+        else _TALKING[talking]
+    )
     lines = [
         "# 此刻",
         f"现在是 {local.year}年{local.month}月{local.day}日"
         f"（星期{_WEEKDAYS[local.weekday()]}）{local:%H:%M}（制作人所在时区 {timezone}）。",
-        _TALKING[talking],
+        said,
     ]
+    if face_to_face:
+        lines.append(_IN_PERSON_PROMPTS)
     if last_contact is not None:
         then = last_contact.astimezone(zone)
         year = f"{then.year}年" if then.year != local.year else ""

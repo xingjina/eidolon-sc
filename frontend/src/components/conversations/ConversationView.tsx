@@ -69,6 +69,7 @@ import {
   PhoneIcon,
   PhotosUsedUpIcon,
   SendIcon,
+  InPersonIcon,
 } from "@/theme/icons";
 import { Ja } from "@/theme/Ja";
 
@@ -171,6 +172,16 @@ export function ConversationView({
   }, [snapshot.newPhoto, live]);
 
   const isOpen = conversation.status === "open";
+  // 现在是不是面对面（GLOSSARY.md「面对面」）：看记录里最后一次切换，历史对话里也一样。
+  const inPerson = useMemo(() => {
+    let faceToFace = false;
+    for (const entry of entries) {
+      if (entry.kind !== "event") continue;
+      if (entry.event === "in_person") faceToFace = true;
+      else if (entry.event === "on_phone") faceToFace = false;
+    }
+    return faceToFace;
+  }, [entries]);
   // 送礼入口去的礼物子页：只带她，礼物一律记进当前对话（历史对话里点的也一样）。
   const gifts = giftsHref(character.id);
   // 在历史对话里开新对话：先回到当前对话。
@@ -229,6 +240,25 @@ export function ConversationView({
     </HeaderTip>
   );
 
+  // 面对面开关（GLOSSARY.md「面对面」）：开着时打字和说话都算当面；历史对话、她结束了的对话里不能切。
+  const faceToFaceLabel = inPerson ? t.backToPhone : t.faceToFace(character.name);
+  const faceToFaceKey = (
+    <HeaderTip label={faceToFaceLabel}>
+      <Button
+        variant="ghost"
+        size="icon-lg"
+        className={cn(headerKey, inPerson && "bg-muted")}
+        aria-label={faceToFaceLabel}
+        aria-pressed={inPerson}
+        disabled={viewing !== null || ended || !isOpen}
+        focusableWhenDisabled
+        onClick={() => void live?.setInPerson(!inPerson)}
+      >
+        <InPersonIcon className="size-5" />
+      </Button>
+    </HeaderTip>
+  );
+
   const header = (
     <header inert={isCovered} className="flex h-14 shrink-0 items-center gap-1 px-2">
       {onBack && (
@@ -250,6 +280,7 @@ export function ConversationView({
         )}
       </div>
       <HerLetterButton character={character} className={headerKey} />
+      {faceToFaceKey}
       {phoneKey}
       {trophy && <TrophyCue key={trophy.key} trophy={trophy} isReducedMotion={isReducedMotion} />}
       {/* 礼貌的 live region 一直在，奖杯出现时读「成就，抽奖 +n」；按 key 换节点，同样的 n 再来一次也读 */}
@@ -661,6 +692,17 @@ function Messages({
   reading: Reading | null;
 }) {
   const lines = linesOf(entries, new Date(), affinityOn);
+  // 面对面时用户写的话才有旁白：按记录里最后一次切换，逐条标出（「面对面」）。
+  const faceToFace = new Set<string>();
+  let inPerson = false;
+  for (const entry of entries) {
+    if (entry.kind === "event") {
+      if (entry.event === "in_person") inPerson = true;
+      else if (entry.event === "on_phone") inPerson = false;
+    } else if (entry.kind === "user" && inPerson) {
+      faceToFace.add(entry.key);
+    }
+  }
   // 键盘停在她最后一条能朗读的话上（`ReadAloudMenu`）。
   const tabStop = reading?.canRead ? entries.findLast((e) => herLineIn(reading, e))?.key : undefined;
   return (
@@ -704,6 +746,7 @@ function Messages({
                     reading={reading}
                     isTabStop={line.entry.key === tabStop}
                     lookingUp={lookingUp}
+                    faceToFace={faceToFace.has(line.entry.key)}
                   />
                 </MessageScrollerItem>
               ),
@@ -784,6 +827,7 @@ function Bubbled({
   reading,
   isTabStop,
   lookingUp,
+  faceToFace,
 }: {
   line: Extract<Line, { kind: "entry" }>;
   entry: Exclude<Entry, { kind: "event" }>;
@@ -793,6 +837,8 @@ function Bubbled({
   isTabStop: boolean;
   /** 她在正在进行的回合里查看什么；只写在她还没说完的那条回复里。 */
   lookingUp: Look[] | null;
+  /** 这一条是面对面时说的（「面对面」）：用户写的括号画成旁白。 */
+  faceToFace: boolean;
 }) {
   const time = <time className="shrink-0 pb-0.5 text-meta text-muted-foreground tabular-nums">{clock(entry.at)}</time>;
   const said = reading && herLineIn(reading, entry);
@@ -803,7 +849,9 @@ function Bubbled({
           {last && time}
           <Bubble variant="producer" align="end" joinsPrevious={!first} joinsNext={!last}>
             <BubbleContent>
-              <p className="text-body whitespace-pre-wrap">{entry.text}</p>
+              <p className="text-body whitespace-pre-wrap">
+                {faceToFace ? <Prompts text={entry.text} /> : entry.text}
+              </p>
             </BubbleContent>
           </Bubble>
         </div>
@@ -895,6 +943,29 @@ function failureText(failure: Failure): string {
   return [failure.message, failure.toOwnKeys && t.ownLLMExempts, failure.countsTowardLimit === false && t.notCounted]
     .filter(Boolean)
     .join(" ");
+}
+
+/** 用户写的话里用方括号或圆括号括起来的一段：面对面时那是他的动作、给她的演出提示，或者递给她的东西。 */
+const PROMPT_PART = /^(\[[^\]]*\]|（[^）]*）|\([^)]*\))$/;
+
+/**
+ * 面对面时用户说的话（「面对面」）：括起来的部分画成 muted 的旁白，和他说出口的话分开。
+ * 手机模式下整句原样显示，不走这里。
+ */
+function Prompts({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\[[^\]]*\]|（[^）]*）|\([^)]*\))/g).map((part, i) =>
+        PROMPT_PART.test(part) ? (
+          <span key={i} className="text-muted-foreground">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
 }
 
 /** 对话记录里居中的一颗胶囊（好感度的变化、照片用完）：样子和日期条一样，一个小图标加一句话，不用她的颜色。 */

@@ -39,6 +39,7 @@ import {
   listLatestConversations,
   listMessages,
   sendTurn,
+  setScene,
   type Account,
   type Character,
   type LatestConversation,
@@ -419,6 +420,8 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
             seen(characterId);
             return record;
           }),
+        setScene: (conversationId, inPerson) =>
+          setScene(conversationId, inPerson).then((held) => held.event),
         onListChanged: refresh,
         onRewarded: rewarded,
         startCall: (conversationId, preferences, handlers) => startCall(conversationId, preferences, handlers, userId),

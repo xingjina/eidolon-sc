@@ -180,6 +180,7 @@ from eidolon.store import (
     read_last_contact,
     read_profile,
     read_record,
+    read_scene,
     timestamp,
     told_her,
 )
@@ -466,8 +467,9 @@ class _BeforeAsking:
     the user and she were last in touch (None in a call, where she knows they are talking),
     her affinity as it begins, what it may send for a photo (None for a reach-out), and the
     producer profile; and when they were last in touch apart, as the weather has it
-    (`her_weather`): in a call, before it connected (None if never); and the letters she
-    wrote the user last, the earliest first (`letter_prompt.read_earlier`)."""
+    (`her_weather`): in a call, before it connected (None if never); the letters she
+    wrote the user last, the earliest first (`letter_prompt.read_earlier`); and whether the
+    conversation is face to face (「面对面」), as its last switch says."""
 
     ended: bool
     character: Character
@@ -478,6 +480,7 @@ class _BeforeAsking:
     profile: ProducerProfile
     last_apart: datetime | None = None
     letters: Sequence[Earlier] = ()
+    in_person: bool = False
 
 
 @dataclass
@@ -883,7 +886,7 @@ class ConversationEngine:
             [
                 self._now_section(
                     known, occasion, now, timezone, profile, last_contact, affinity_lines,
-                    known_weather,
+                    known_weather, read.in_person,
                 ),
                 *_moments_told(known, now, timezone, affinity),
                 *_letters_told(read.letters),
@@ -1161,6 +1164,7 @@ class ConversationEngine:
             read_profile(db, conversation.user_id),
             last_apart,
             read_earlier(db, user_id, character_id),
+            read_scene(db, conversation.id),
         )
 
     def _photo_eligibility(
@@ -1324,11 +1328,13 @@ class ConversationEngine:
         last_contact: datetime | None,
         affinity_lines: Sequence[str],
         known_weather: KnownWeather | None = None,
+        in_person: bool = False,
     ) -> str:
-        """The prompt section of what she knows of now on `occasion` (`HerNow.lines`)."""
+        """The prompt section of what she knows of now on `occasion` (`HerNow.lines`), face to
+        face if `in_person` (「面对面」)."""
         return "\n".join(self._her_now.lines(
             known, occasion, now, timezone, profile, last_contact, affinity_lines,
-            known_weather=known_weather,
+            known_weather=known_weather, in_person=in_person,
         ))
 
     def _prompt(

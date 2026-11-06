@@ -131,6 +131,7 @@ function opening(options: Options = {}) {
       return conversation;
     },
     listMessages: async (conversationId) => (conversationId === "c1" ? (options.messages ?? []) : []),
+    setScene: async () => null,
     getAffinity: async () => options.affinity ?? null,
     getPhoto: async () => ({ status: "pending", reason: null }),
     onListChanged: () => listChanged++,

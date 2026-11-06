@@ -209,6 +209,9 @@ export const zh = {
     herSchedule: "她的日程",
     call: (name: string) => `和${name}通话`,
     callTooltip: "语音通话",
+    /** 页首的「面对面」开关（GLOSSARY.md「面对面」）：开着时打字和说话都算当面，关着就是手机。 */
+    faceToFace: (name: string) => `和${name}面对面`,
+    backToPhone: "回到手机聊天",
     placeholder: "用中文或日语说点什么",
     send: "发送",
     /** 消息区里跨天处的日期条；昨天、更早的写法和列表一样（conversationList）。 */
@@ -226,6 +229,10 @@ export const zh = {
       ended: (name: string) => `${name}结束了对话`,
       /** 她经期里用户第一次来时记下的（只给用户看）：`since` 是 `unwellSince` 拼出的那几个字。 */
       unwell: (name: string, since: string) => `${name}好像从${since}起就不太舒服`,
+      /** 用户打开「面对面」（GLOSSARY.md「面对面」）：从这一句起是当面说的。 */
+      in_person: (name: string) => `你和${name}见了面`,
+      /** 用户关掉「面对面」：又回到手机上。 */
+      on_phone: (name: string) => `你和${name}又回到了手机上`,
     },
     /** 她不太舒服从哪天起：早 0、1、2 天写词，再早写日期（两边留空格，「从 10月21日 起」）。 */
     unwellSince: {

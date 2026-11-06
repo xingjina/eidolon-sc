@@ -32,7 +32,10 @@ Admit = Callable[[sqlite3.Connection, str], None]
 raises makes no one (`Store.create_user_signing_in_with`)."""
 
 Role = Literal["user", "character"]
-EventKind = Literal["hung_up", "gift", "ended", "unwell"]
+EventKind = Literal["hung_up", "gift", "ended", "unwell", "in_person", "on_phone"]
+"""What a conversation's events record: she hung up on the user, the user gave her a gift,
+she ended the conversation, she seems unwell, and the user switching for the conversation's
+turns to be face to face (`in_person`, 「面对面」) or back on the phone (`on_phone`)."""
 PhotoStatus = Literal["pending", "ready", "failed"]
 """A photo being generated, sent, or not sent after all."""
 PhotoFailure = Literal["timeout", "service_error", "bad_image", "own_key_failed", "used_up"]
@@ -416,8 +419,12 @@ Recorded = Message | ConversationEvent | ReachOut
 
 def told_her(entry: Recorded) -> bool:
     """Whether she is told of the entry in her prompts: of all but her being unwell, which
-    she knows herself, and which is for the user alone."""
-    return not (isinstance(entry, ConversationEvent) and entry.kind == "unwell")
+    she knows herself, and which is for the user alone, and the switches between face to
+    face and the phone, which the prompt's own scene says (「面对面」), not the record."""
+    return not (
+        isinstance(entry, ConversationEvent)
+        and entry.kind in ("unwell", "in_person", "on_phone")
+    )
 
 
 @dataclass(frozen=True)
@@ -798,6 +805,14 @@ class Store:
         she has ended it: then nothing more is recorded, and it is her ending it that is
         returned."""
         return await self._db.write(_hang_up, conversation_id)
+
+    async def set_scene(
+        self, conversation_id: str, in_person: bool
+    ) -> ConversationEvent | None:
+        """Make the conversation's turns face to face (`in_person`, 「面对面」), or put them
+        back on the phone, recording the switch as a conversation event; None when it is
+        already so and nothing is recorded."""
+        return await self._db.write(_set_scene, conversation_id, in_person)
 
     async def ended(self, conversation_id: str) -> ConversationEvent | None:
         """Her ending the conversation (GLOSSARY.md「已结束的对话」), as recorded; None while
@@ -1450,7 +1465,8 @@ def _last(db: sqlite3.Connection, conversation_id: str) -> Recorded | None:
     message = _message_with_photo(row) if row else None
     event = named.execute(
         f"SELECT {_EVENT_COLUMNS} FROM conversation_events WHERE conversation_id = ?"
-        " AND kind != 'ended' ORDER BY created_at DESC, id DESC LIMIT 1",
+        " AND kind NOT IN ('ended', 'in_person', 'on_phone')"
+        " ORDER BY created_at DESC, id DESC LIMIT 1",
         (conversation_id,),
     ).fetchone()
     reach_out = named.execute(
@@ -1623,6 +1639,30 @@ def add_unwell(
 def _hang_up(db: sqlite3.Connection, conversation_id: str) -> ConversationEvent:
     return read_ended(db, conversation_id) or _insert_event(
         db, conversation_id, "hung_up", _now()
+    )
+
+
+def read_scene(db: sqlite3.Connection, conversation_id: str) -> bool:
+    """Whether the conversation's turns are face to face (「面对面」), as its last switch says;
+    false while it has none, or the last one put it back on the phone."""
+    row = db.execute(
+        "SELECT kind FROM conversation_events"
+        " WHERE conversation_id = ? AND kind IN ('in_person', 'on_phone')"
+        " ORDER BY id DESC LIMIT 1",
+        (conversation_id,),
+    ).fetchone()
+    return row is not None and row[0] == "in_person"
+
+
+def _set_scene(
+    db: sqlite3.Connection, conversation_id: str, in_person: bool
+) -> ConversationEvent | None:
+    """Record the conversation's turns being face to face (`in_person`) or back on the phone,
+    through `db`; None, recording nothing, if that is how they already are."""
+    if read_scene(db, conversation_id) == in_person:
+        return None
+    return _insert_event(
+        db, conversation_id, "in_person" if in_person else "on_phone", _now()
     )
 
 

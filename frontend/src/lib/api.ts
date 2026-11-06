@@ -173,8 +173,9 @@ export async function getPhoto(id: string): Promise<PhotoStatus> {
 
 /** The kinds of conversation event (GLOSSARY.md「对话事件」): she hung up on the user; the user
  * gave her a gift; she ended the conversation, which can then only be read (GLOSSARY.md「已结束的对话」);
- * she seems unwell, for the user alone. */
-export type EventKind = "hung_up" | "gift" | "ended" | "unwell";
+ * she seems unwell, for the user alone; the user made the conversation face to face (「面对面」),
+ * or put it back on the phone. */
+export type EventKind = "hung_up" | "gift" | "ended" | "unwell" | "in_person" | "on_phone";
 
 /** Something that happened in a conversation that is not a turn, recorded among its messages. */
 export type ConversationEvent = {
@@ -1039,6 +1040,21 @@ export async function createConversation(characterId: string): Promise<Conversat
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ character_id: characterId }),
+    }),
+  );
+}
+
+/** Makes the conversation's turns face to face (`inPerson`, 「面对面」) or back on the phone.
+ * Returns the switch as recorded in its record, `event`, or null when it was already so. */
+export async function setScene(
+  conversationId: string,
+  inPerson: boolean,
+): Promise<{ in_person: boolean; event: ConversationEvent | null }> {
+  return json(
+    await api(`/api/conversations/${conversationId}/scene`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ in_person: inPerson }),
     }),
   );
 }

@@ -16,6 +16,9 @@ export { MessageCircleOff as EndedIcon } from "lucide-react";
 // 她好像不太舒服（对话事件 `unwell`）：中性，不用她的颜色、不用心形。
 export { CloudDrizzle as UnwellIcon } from "lucide-react";
 
+// 面对面的开关和它记下的对话事件，以及回到手机的那一条（GLOSSARY.md「面对面」）。
+export { Smartphone as OnPhoneIcon, UsersRound as InPersonIcon } from "lucide-react";
+
 // 记忆页、设置页用的图标（ticket 06）。
 export { Trash2 as TrashIcon } from "lucide-react";
 

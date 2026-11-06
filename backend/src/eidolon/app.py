@@ -126,6 +126,12 @@ class NewConversation(BaseModel):
     character_id: str
 
 
+class SceneInput(BaseModel):
+    """Whether the conversation's turns are face to face (「面对面」), or back on the phone."""
+
+    in_person: bool
+
+
 class TurnInput(BaseModel):
     text: str
     own_keys: OwnKeysInput | None = None
@@ -712,6 +718,16 @@ def create_app(backend: Backend) -> FastAPI:
         order. The user reads it: its reach-outs are seen from now on."""
         conversation = await conversation_or_404(conversation_id, user_id)
         return [recorded(entry) for entry in await store.read_by_user(conversation.id)]
+
+    @app.post("/api/conversations/{conversation_id}/scene")
+    async def set_scene(conversation_id: str, body: SceneInput, user_id: UserId) -> dict:
+        """Make the conversation's turns face to face (「面对面」) or back on the phone: the
+        switch is recorded in its record and told back as that event, or null if it was
+        already so. A conversation she has ended is refused (409)."""
+        conversation = await conversation_or_404(conversation_id, user_id)
+        await refuse_if_ended(conversation)
+        event = await store.set_scene(conversation.id, body.in_person)
+        return {"in_person": body.in_person, "event": event.shown() if event else None}
 
     @app.post("/api/conversations/{conversation_id}/turns")
     async def text_turn(

@@ -260,12 +260,14 @@ class HerNow:
         weather: Weather | None = None,
         replying: bool = False,
         known_weather: KnownWeather | None = None,
+        in_person: bool = False,
     ) -> list[str]:
         """The second step: the lines of now for `occasion` (`CARRIES`), at `now`, the
         producer in `timezone` with `profile`, last in touch at `last_contact` (None if never,
         or in a call), she feeling as `affinity_lines` say, posting a moment in `weather` (None
         for none known), or `replying` to the producer's comment on one; her cycle where it has
-        her at `now`; typing, in a call or reaching out, `known_weather` (`weather`). Joined by
+        her at `now`; typing, in a call or reaching out, `known_weather` (`weather`), and,
+        with `in_person`, that they are face to face (「面对面」). Joined by
         new lines, they make one section: the time and the rest of `now_prompt`
         (`posting_now_prompt` posting a moment), the affinity lines last in it; where the
         producer is and the weather; the day in Tokyo; her jobs; where she looks up, what she
@@ -278,7 +280,9 @@ class HerNow:
             lines.append(posting_now_prompt(profile, now, timezone, felt, weather, replying))
         elif carries.time:
             assert occasion != "visit"
-            lines.append(now_prompt(profile, now, timezone, occasion, felt, last_contact))
+            lines.append(
+                now_prompt(profile, now, timezone, occasion, felt, last_contact, in_person)
+            )
         else:
             lines += felt
         if carries.weather and known_weather is not None:
